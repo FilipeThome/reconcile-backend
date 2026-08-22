@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: reconcile-backend
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/reconcile}
+    username: ${DATABASE_USER:reconcile}
+    password: ${DATABASE_PASSWORD:reconcile}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+  forward-headers-strategy: framework
+
+reconcile:
+  jwt:
+    secret: ${JWT_SECRET:}
+    expiration-hours: 12
+  cors:
+    origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:8081,http://127.0.0.1:5173,http://127.0.0.1:8081}
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss} %-5level [%X{tenantId}] %logger{36} - %msg%n"
