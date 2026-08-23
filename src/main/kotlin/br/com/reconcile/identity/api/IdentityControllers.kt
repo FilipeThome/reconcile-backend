@@ -64,6 +64,11 @@ class SettingsController(
                 "name" to tenant.name,
                 "sellerId" to (sellers.findByTenantId(tenant.id).firstOrNull()?.sellerExternalId ?: ""),
             ),
+            "currentUser" to mapOf(
+                "name" to auth.displayName,
+                "email" to auth.email,
+                "role" to auth.role,
+            ),
             "users" to users.findByTenantId(tenant.id).map { mapOf("name" to it.name, "email" to it.email, "role" to it.role) },
             "tolerances" to mapOf(
                 "cents" to tenant.amountTolerance,
