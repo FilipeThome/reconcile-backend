@@ -96,6 +96,8 @@ interface RuleRepository : JpaRepository<RuleEntity, UUID> {
 
 interface SnapshotRepository : JpaRepository<SnapshotEntity, UUID> {
     fun findByTenantIdAndOrderId(tenantId: UUID, orderId: UUID): SnapshotEntity?
+    fun findByTenantId(tenantId: UUID): List<SnapshotEntity>
+    fun findByTenantIdAndExternalId(tenantId: UUID, externalId: String): SnapshotEntity?
 }
 
 interface CaseRepository : JpaRepository<CaseEntity, UUID> {

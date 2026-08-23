@@ -12,6 +12,7 @@ import br.com.reconcile.ledger.infra.SettlementRepository
 import br.com.reconcile.reconciliation.infra.CaseRepository
 import br.com.reconcile.reconciliation.infra.SnapshotRepository
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.security.currentUser
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -31,7 +32,17 @@ class LedgerQueryService(
 ) {
     private fun tenantId(): UUID = currentUser().tenantId
 
-    fun listOrders() = orders.findByTenantIdOrderByOrderedAtDesc(tenantId()).map { orderDto(it) }
+    fun listOrders(filter: PeriodFilter): List<Map<String, Any?>> {
+        val tenant = tenantId()
+        val paymentsByOrder = payments.findByTenantIdOrderByPaidAtDesc(tenant).groupBy { it.orderId }
+        return orders.findByTenantIdOrderByOrderedAtDesc(tenant)
+            .filter { order ->
+                filter.matchesInstant(order.orderedAt) &&
+                    filter.matchesMarketplace(order.marketplace) &&
+                    filter.matchesGateway(paymentsByOrder[order.id]?.firstOrNull()?.gateway)
+            }
+            .map { orderDto(it) }
+    }
 
     fun getOrder(externalId: String): Map<String, Any?> {
         val order = orders.findByTenantIdAndExternalId(tenantId(), externalId)
@@ -60,9 +71,62 @@ class LedgerQueryService(
             "payoutId" to payout?.externalId,
             "invoiceId" to invoice?.externalId,
             "caseId" to case?.externalId,
+            "payment" to payment?.let {
+                mapOf(
+                    "id" to it.externalId,
+                    "orderId" to order.externalId,
+                    "date" to it.paidAt.toString(),
+                    "gateway" to it.gateway,
+                    "method" to it.method,
+                    "grossAmount" to it.grossAmount,
+                    "fees" to it.fees,
+                    "netAmount" to it.netAmount,
+                    "status" to it.status,
+                    "reconciliation" to it.reconciliationStatus,
+                )
+            },
+            "settlement" to settlement?.let {
+                mapOf(
+                    "id" to it.externalId,
+                    "orderId" to order.externalId,
+                    "paymentId" to (payment?.externalId ?: ""),
+                    "date" to it.settledOn.toString(),
+                    "expectedNet" to it.expectedNet,
+                    "actualNet" to it.actualNet,
+                    "status" to it.status,
+                    "snapshotId" to it.snapshotExternalId,
+                )
+            },
+            "payout" to payout?.let {
+                mapOf(
+                    "id" to it.externalId,
+                    "gateway" to it.gateway,
+                    "date" to it.paidAt.toString(),
+                    "grossAmount" to it.grossAmount,
+                    "fees" to it.fees,
+                    "netAmount" to it.netAmount,
+                    "status" to it.status,
+                    "reconciliation" to it.reconciliationStatus,
+                )
+            },
+            "invoice" to invoice?.let {
+                mapOf(
+                    "id" to it.externalId,
+                    "orderId" to order.externalId,
+                    "type" to it.documentType,
+                    "number" to it.number,
+                    "key" to it.accessKey,
+                    "issuedAt" to it.issuedAt?.toString(),
+                    "total" to it.totalAmount,
+                    "status" to it.status,
+                    "cbs" to it.cbsAmount,
+                    "ibs" to it.ibsAmount,
+                )
+            },
             "snapshot" to snapshot?.let {
                 mapOf(
                     "id" to it.externalId,
+                    "orderId" to order.externalId,
                     "version" to it.engineVersion,
                     "gross" to it.grossAmount,
                     "expected" to it.expectedAmount,
@@ -74,8 +138,11 @@ class LedgerQueryService(
         )
     }
 
-    fun listPayments() = payments.findByTenantIdOrderByPaidAtDesc(tenantId()).map { pay ->
+    fun listPayments(filter: PeriodFilter) = payments.findByTenantIdOrderByPaidAtDesc(tenantId()).mapNotNull { pay ->
         val order = orders.findById(pay.orderId).orElse(null)
+        if (!filter.matchesInstant(pay.paidAt) || !filter.matchesGateway(pay.gateway) || !filter.matchesMarketplace(order?.marketplace)) {
+            return@mapNotNull null
+        }
         mapOf(
             "id" to pay.externalId,
             "orderId" to (order?.externalId ?: ""),
@@ -90,9 +157,12 @@ class LedgerQueryService(
         )
     }
 
-    fun listSettlements() = settlements.findByTenantId(tenantId()).map { set ->
+    fun listSettlements(filter: PeriodFilter) = settlements.findByTenantId(tenantId()).mapNotNull { set ->
         val order = orders.findById(set.orderId).orElse(null)
         val payment = payments.findById(set.paymentId).orElse(null)
+        if (!filter.matchesDate(set.settledOn) || !filter.matchesMarketplace(order?.marketplace) || !filter.matchesGateway(payment?.gateway)) {
+            return@mapNotNull null
+        }
         mapOf(
             "id" to set.externalId,
             "orderId" to (order?.externalId ?: ""),
@@ -105,7 +175,8 @@ class LedgerQueryService(
         )
     }
 
-    fun listPayouts() = payouts.findByTenantIdOrderByPaidAtDesc(tenantId()).map { payout ->
+    fun listPayouts(filter: PeriodFilter) = payouts.findByTenantIdOrderByPaidAtDesc(tenantId()).mapNotNull { payout ->
+        if (!filter.matchesInstant(payout.paidAt) || !filter.matchesGateway(payout.gateway)) return@mapNotNull null
         val orderIds = payoutOrders.findByPayoutId(payout.id).mapNotNull { link ->
             orders.findById(link.orderId).orElse(null)?.externalId
         }
@@ -122,8 +193,9 @@ class LedgerQueryService(
         )
     }
 
-    fun listFees() = fees.findByTenantId(tenantId()).map { fee ->
+    fun listFees(filter: PeriodFilter) = fees.findByTenantId(tenantId()).mapNotNull { fee ->
         val order = orders.findById(fee.orderId).orElse(null)
+        if (!filter.matchesInstant(fee.occurredAt) || !filter.matchesMarketplace(order?.marketplace)) return@mapNotNull null
         mapOf(
             "id" to fee.externalId,
             "orderId" to (order?.externalId ?: ""),
@@ -135,8 +207,9 @@ class LedgerQueryService(
         )
     }
 
-    fun listRefunds() = refunds.findByTenantId(tenantId()).map { refund ->
+    fun listRefunds(filter: PeriodFilter) = refunds.findByTenantId(tenantId()).mapNotNull { refund ->
         val order = refund.orderId?.let { orders.findById(it).orElse(null) }
+        if (!filter.matchesInstant(refund.occurredAt) || !filter.matchesMarketplace(order?.marketplace)) return@mapNotNull null
         mapOf(
             "id" to refund.externalId,
             "orderId" to (order?.externalId ?: ""),

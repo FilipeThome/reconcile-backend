@@ -82,4 +82,14 @@ class ReconciliationRulesTest {
         val finding = UnreflectedRefundRule().evaluate(ctx(refund = true, refundReflected = false, actualNet = Money.of("189.90")))
         assertEquals("chargeback_sem_reflexo", finding?.cause)
     }
+
+    @Test
+    fun `rules ignore incomplete contexts`() {
+        kotlin.test.assertNull(PaidWithoutPayoutRule().evaluate(ctx(payoutPresent = true)))
+        kotlin.test.assertNull(BelowExpectedRule().evaluate(ctx(actualNet = null)))
+        kotlin.test.assertNull(BelowExpectedRule().evaluate(ctx(actualNet = Money.of("842.30"))))
+        kotlin.test.assertNull(MissingInvoiceRule().evaluate(ctx(invoiceAuthorized = true)))
+        kotlin.test.assertNull(InvoiceAmountMismatchRule().evaluate(ctx(invoiceTotal = null)))
+        kotlin.test.assertNull(UnreflectedRefundRule().evaluate(ctx(refund = false)))
+    }
 }

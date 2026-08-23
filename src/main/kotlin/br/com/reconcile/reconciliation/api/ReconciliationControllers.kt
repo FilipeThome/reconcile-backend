@@ -4,6 +4,8 @@ import br.com.reconcile.reconciliation.application.CaseService
 import br.com.reconcile.reconciliation.application.DashboardService
 import br.com.reconcile.reconciliation.application.EngineService
 import br.com.reconcile.reconciliation.application.RuleQueryService
+import br.com.reconcile.reconciliation.application.SnapshotQueryService
+import br.com.reconcile.shared.api.PeriodFilter
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
@@ -37,14 +39,26 @@ class ReconciliationControllers(
     private val rules: RuleQueryService,
     private val engine: EngineService,
     private val dashboard: DashboardService,
+    private val snapshots: SnapshotQueryService,
 ) {
     @GetMapping("/dashboard")
     @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
-    fun dashboard() = dashboard.dashboard()
+    fun dashboard(
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) marketplace: String?,
+        @RequestParam(required = false) gateway: String?,
+    ) = dashboard.dashboard(PeriodFilter.of(from, to, marketplace, gateway))
 
     @GetMapping("/cases")
     @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
-    fun list(@RequestParam(required = false) status: String?) = cases.list(status)
+    fun list(
+        @RequestParam(required = false) status: String?,
+        @RequestParam(required = false) from: String?,
+        @RequestParam(required = false) to: String?,
+        @RequestParam(required = false) marketplace: String?,
+        @RequestParam(required = false) gateway: String?,
+    ) = cases.list(status, PeriodFilter.of(from, to, marketplace, gateway))
 
     @GetMapping("/cases/{id}")
     @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
@@ -68,6 +82,14 @@ class ReconciliationControllers(
     @GetMapping("/engine")
     @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
     fun engine() = engine.overview()
+
+    @GetMapping("/snapshots")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
+    fun snapshots() = snapshots.list()
+
+    @GetMapping("/snapshots/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
+    fun snapshot(@PathVariable id: String) = snapshots.get(id)
 
     @GetMapping("/rules")
     @PreAuthorize("hasAnyRole('ADMIN','OPERADOR','CONTADOR')")
