@@ -51,6 +51,18 @@ class SecurityConfig(
                 headers.contentSecurityPolicy { it.policyDirectives("default-src 'none'; frame-ancestors 'none'") }
                 headers.httpStrictTransportSecurity { it.disable() }
             }
+            .exceptionHandling { exceptions ->
+                exceptions.authenticationEntryPoint { _, response, _ ->
+                    response.status = 401
+                    response.contentType = "application/json"
+                    response.writer.write("""{"code":"UNAUTHORIZED","message":"Autenticação necessária"}""")
+                }
+                exceptions.accessDeniedHandler { _, response, _ ->
+                    response.status = 403
+                    response.contentType = "application/json"
+                    response.writer.write("""{"code":"FORBIDDEN","message":"Acesso negado"}""")
+                }
+            }
             .authorizeHttpRequests {
                 it.requestMatchers("/api/v1/auth/login", "/api/v1/health").permitAll()
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

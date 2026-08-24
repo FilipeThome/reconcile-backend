@@ -6,6 +6,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import java.util.UUID
 
 object TestAuth {
+    const val JWT_SECRET = "1234567890123456789012345678901234567890123456789012345678901234"
     val tenantId: UUID = UUID.fromString("8f2c1a00-0000-4000-8000-000000000001")
     val userId: UUID = UUID.fromString("8f2c1a00-0000-4000-8000-000000000002")
 

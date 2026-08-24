@@ -53,6 +53,7 @@ import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.domain.Money
+import br.com.reconcile.shared.security.ClientIpResolver
 import br.com.reconcile.shared.security.JwtService
 import br.com.reconcile.shared.security.LoginRateLimiter
 import org.junit.jupiter.api.AfterEach
@@ -198,7 +199,7 @@ class RemainingServicesTest {
         val tenants = Mockito.mock(TenantRepository::class.java)
         val sellers = Mockito.mock(SellerAccountRepository::class.java)
         val encoder = Mockito.mock(PasswordEncoder::class.java)
-        val jwt = JwtService("unit-test-secret-key-32-bytes-min!!", 1)
+        val jwt = JwtService(TestAuth.JWT_SECRET, 1)
         val user = UserEntity(id = TestAuth.userId, tenantId = tenant, name = "Ana", email = "ana@x.com", passwordHash = "hash", role = "admin")
         val tenantEntity = TenantEntity(id = tenant, externalId = "ten_8f2c1a", name = "Loja")
         Mockito.`when`(users.findByEmail("ana@x.com")).thenReturn(user)
@@ -214,13 +215,19 @@ class RemainingServicesTest {
         val request = MockHttpServletRequest()
         request.remoteAddr = "127.0.0.1"
         request.addHeader("X-Real-IP", "10.0.0.8")
-        val loginApi = AuthController(auth, LoginRateLimiter())
+        val loginApi = AuthController(auth, LoginRateLimiter(), ClientIpResolver(""))
         loginApi.login(LoginRequest("ana@x.com", "senha"), request)
 
         Mockito.`when`(users.findByTenantId(tenant)).thenReturn(listOf(user))
         Mockito.`when`(sellers.findByTenantId(tenant)).thenReturn(listOf(SellerAccountEntity(sellerExternalId = "MLB-1")))
         val settings = SettingsController(tenants, users, sellers).settings()
         assertEquals("Loja", (settings["tenant"] as Map<*, *>)["name"])
+        assertEquals(1, (settings["users"] as List<*>).size)
+        TestAuth.login("operador")
+        val operatorSettings = SettingsController(tenants, users, sellers).settings()
+        val operatorUsers = operatorSettings["users"] as List<*>
+        assertEquals(1, operatorUsers.size)
+        assertEquals("operador", (operatorUsers.single() as Map<*, *>)["role"])
 
         val connections = Mockito.mock(ConnectionRepository::class.java)
         val syncs = Mockito.mock(IntegrationSyncRepository::class.java)
