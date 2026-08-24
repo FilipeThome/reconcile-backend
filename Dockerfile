@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM public.ecr.aws/docker/library/eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /src
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
@@ -8,7 +8,7 @@ COPY src ./src
 RUN ./gradlew --no-daemon bootJar -x test \
     && mv build/libs/*-SNAPSHOT.jar /src/app.jar
 
-FROM eclipse-temurin:21-jre-alpine
+FROM public.ecr.aws/docker/library/eclipse-temurin:21-jre-alpine
 RUN apk add --no-cache wget \
     && addgroup -S app && adduser -S -G app app
 WORKDIR /app
