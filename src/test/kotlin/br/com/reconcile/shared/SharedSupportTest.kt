@@ -32,6 +32,7 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.authentication.BadCredentialsException
+import org.springframework.security.crypto.factory.PasswordEncoderFactories
 import java.math.BigDecimal
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -122,6 +123,20 @@ class SharedSupportTest {
         val okRes = MockHttpServletResponse()
         filter.doFilter(match, okRes, MockFilterChain())
         assertEquals(200, okRes.status)
+
+        val login = MockHttpServletRequest("POST", "/api/v1/auth/login")
+        login.servletPath = "/api/v1/auth/login"
+        login.addHeader("Authorization", "Bearer not-a-token")
+        val loginRes = MockHttpServletResponse()
+        filter.doFilter(login, loginRes, MockFilterChain())
+        assertEquals(200, loginRes.status)
+    }
+
+    @Test
+    fun `demo password hash matches senha123`() {
+        val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
+        val hash = "{bcrypt}\$2b\$10\$b2lkFg.KxWPV7YcOe9RS6uN3osQztbK3JJnr6uAlTmd396myrpiia"
+        assertTrue(encoder.matches("senha123", hash))
     }
 
     @Test

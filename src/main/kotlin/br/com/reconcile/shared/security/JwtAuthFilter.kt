@@ -12,6 +12,11 @@ import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
 class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter() {
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean {
+        val path = request.servletPath.ifBlank { request.requestURI.substringBefore('?') }
+        return path == "/api/v1/auth/login" || path == "/api/v1/health"
+    }
+
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
         val header = request.getHeader("Authorization")
         if (header != null && header.startsWith("Bearer ")) {
