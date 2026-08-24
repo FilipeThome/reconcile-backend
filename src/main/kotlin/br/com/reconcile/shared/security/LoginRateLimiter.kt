@@ -11,14 +11,23 @@ class LoginRateLimiter {
 
     private val buckets = ConcurrentHashMap<String, Bucket>()
 
-    fun check(clientKey: String) {
+    fun assertAllowed(clientKey: String) {
         val now = System.currentTimeMillis()
-        val bucket = buckets.compute(clientKey) { _, existing ->
+        val bucket = buckets[clientKey] ?: return
+        if (now - bucket.windowStart >= WINDOW_MS) {
+            buckets.remove(clientKey, bucket)
+            return
+        }
+        if (bucket.count >= MAX_ATTEMPTS) {
+            throw ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT", "Muitas tentativas. Aguarde um minuto.")
+        }
+    }
+
+    fun recordFailure(clientKey: String) {
+        val now = System.currentTimeMillis()
+        buckets.compute(clientKey) { _, existing ->
             if (existing == null || now - existing.windowStart >= WINDOW_MS) Bucket(1, now)
             else existing.apply { count += 1 }
-        }!!
-        if (bucket.count > MAX_ATTEMPTS) {
-            throw ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT", "Muitas tentativas. Aguarde um minuto.")
         }
     }
 

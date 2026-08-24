@@ -8,7 +8,9 @@ API Kotlin/Spring Boot da reconciliação de marketplace. Postgres 16 + Flyway +
 copy .env.example .env
 ```
 
-Defina um `JWT_SECRET` com pelo menos 32 caracteres aleatórios. O Compose recusa subir sem isso.
+Defina um `JWT_SECRET` com pelo menos 64 caracteres aleatórios e um `DATABASE_PASSWORD` próprio. O Compose recusa subir sem os dois.
+
+Em deploy público, use `SEED_DEMO=false` (apaga as contas piloto) e preencha `TRUSTED_PROXIES` com o IP do reverse proxy. Sem isso o limitador de login usa só o IP TCP e ignora `X-Real-IP` / `X-Forwarded-For`.
 
 ## Docker
 

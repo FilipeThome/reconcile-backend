@@ -11,7 +11,10 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
-class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter() {
+class JwtAuthFilter(
+    private val jwtService: JwtService,
+    private val sessionUsers: SessionUserLoader,
+) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         val path = request.servletPath.ifBlank { request.requestURI.substringBefore('?') }
         return path == "/api/v1/auth/login" || path == "/api/v1/health"
@@ -25,10 +28,15 @@ class JwtAuthFilter(private val jwtService: JwtService) : OncePerRequestFilter()
                 unauthorized(response, "Token ausente")
                 return
             }
-            val user = try {
+            val parsed = try {
                 jwtService.parse(token)
             } catch (_: Exception) {
                 unauthorized(response, "Token inválido ou expirado")
+                return
+            }
+            val user = sessionUsers.hydrate(parsed)
+            if (user == null) {
+                unauthorized(response, "Sessão inválida")
                 return
             }
             val tenantHeader = request.getHeader("X-Tenant-Id")
