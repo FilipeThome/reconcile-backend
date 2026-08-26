@@ -139,6 +139,13 @@ class SharedSupportTest {
         filter.doFilter(login, loginRes, MockFilterChain())
         assertEquals(200, loginRes.status)
 
+        val oauthCb = MockHttpServletRequest("GET", "/api/v1/integrations/oauth/ml/callback")
+        oauthCb.servletPath = "/api/v1/integrations/oauth/ml/callback"
+        oauthCb.addHeader("Authorization", "Bearer not-a-token")
+        val oauthRes = MockHttpServletResponse()
+        filter.doFilter(oauthCb, oauthRes, MockFilterChain())
+        assertEquals(200, oauthRes.status)
+
         val revoked = MockHttpServletRequest()
         revoked.addHeader("Authorization", "Bearer ${jwt.issue(TestAuth.user)}")
         val revokedRes = MockHttpServletResponse()

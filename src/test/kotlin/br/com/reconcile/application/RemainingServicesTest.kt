@@ -24,6 +24,8 @@ import br.com.reconcile.identity.infra.UserEntity
 import br.com.reconcile.identity.infra.UserRepository
 import br.com.reconcile.integration.api.IntegrationController
 import br.com.reconcile.integration.application.IntegrationService
+import br.com.reconcile.integration.ingestion.IngestionResult
+import br.com.reconcile.integration.ingestion.MarketplaceIngestionService
 import br.com.reconcile.integration.infra.ConnectionEntity
 import br.com.reconcile.integration.infra.ConnectionRepository
 import br.com.reconcile.integration.infra.IntegrationSyncRepository
@@ -232,16 +234,49 @@ class RemainingServicesTest {
         val connections = Mockito.mock(ConnectionRepository::class.java)
         val syncs = Mockito.mock(IntegrationSyncRepository::class.java)
         val events = Mockito.mock(RawEventRepository::class.java)
+        val oauth = Mockito.mock(br.com.reconcile.integration.oauth.MarketplaceOAuthService::class.java)
+        val sellerAccounts = Mockito.mock(SellerAccountRepository::class.java)
         val connection = ConnectionEntity(tenantId = tenant, externalId = "ml", name = "ML", status = "disponivel")
+        val csv = ConnectionEntity(tenantId = tenant, externalId = "csv", name = "CSV", status = "disponivel")
+        val shopee = ConnectionEntity(tenantId = tenant, externalId = "shopee", name = "Shopee", status = "disponivel")
         Mockito.`when`(connections.findByTenantId(tenant)).thenReturn(listOf(connection))
         Mockito.`when`(connections.findByTenantIdAndExternalId(tenant, "ml")).thenReturn(connection)
+        Mockito.`when`(connections.findByTenantIdAndExternalId(tenant, "csv")).thenReturn(csv)
+        Mockito.`when`(connections.findByTenantIdAndExternalId(tenant, "shopee")).thenReturn(shopee)
+        Mockito.`when`(oauth.isOAuthProvider("ml")).thenReturn(true)
+        Mockito.`when`(oauth.isOAuthProvider("csv")).thenReturn(false)
+        Mockito.`when`(oauth.isOAuthProvider("x")).thenReturn(false)
+        Mockito.`when`(oauth.configuredHint("ml")).thenReturn(null)
+        Mockito.`when`(oauth.authorizationUrl("ml", tenant, TestAuth.userId)).thenReturn(
+            br.com.reconcile.integration.oauth.OAuthStart("https://auth.mercadolivre.com.br/authorization?response_type=code"),
+        )
         Mockito.`when`(
             events.existsByTenantIdAndIdempotencyKey(Mockito.any(UUID::class.java) ?: tenant, Mockito.anyString() ?: ""),
         ).thenReturn(false)
-        val integrations = IntegrationService(connections, syncs, events, audit)
-        assertEquals(1, integrations.list().size)
-        integrations.connect("ml")
+        Mockito.`when`(oauth.configuredHint("ml")).thenReturn("Defina MERCADO_LIVRE_CLIENT_ID")
+        val ingestion = Mockito.mock(MarketplaceIngestionService::class.java)
+        Mockito.`when`(ingestion.supports("ml")).thenReturn(true)
+        Mockito.`when`(ingestion.ingest(connection)).thenReturn(IngestionResult(2, 2, 1, 0, 1))
+        val integrations = IntegrationService(connections, syncs, events, audit, oauth, sellerAccounts, ingestion)
+        assertTrue(integrations.list()[0]["detail"].toString().contains("MERCADO_LIVRE"))
+        Mockito.`when`(oauth.configuredHint("ml")).thenReturn(null)
+        val oauthStart = integrations.connect("ml")
+        assertTrue(oauthStart["authorizationUrl"].toString().contains("auth.mercadolivre.com.br"))
+        integrations.connect("csv")
         integrations.disconnect("ml")
+        integrations.activateFromOAuth(
+            br.com.reconcile.integration.oauth.OAuthTokens("ml", tenant, "MLB-1", "tok", "ref", Instant.parse("2026-05-04T12:00:00Z")),
+        )
+        Mockito.`when`(sellerAccounts.findByTenantIdAndMarketplace(tenant, "Mercado Livre")).thenReturn(
+            SellerAccountEntity(tenantId = tenant, marketplace = "Mercado Livre", sellerExternalId = "old"),
+        )
+        integrations.activateFromOAuth(
+            br.com.reconcile.integration.oauth.OAuthTokens("ml", tenant, "MLB-2", "tok", "ref", Instant.parse("2026-05-04T12:00:00Z")),
+        )
+        assertTrue(integrations.list()[0]["detail"].toString().contains("MLB-2"))
+        integrations.activateFromOAuth(
+            br.com.reconcile.integration.oauth.OAuthTokens("shopee", tenant, "44120", "tok2", null, null),
+        )
         integrations.backfill("ml")
         Mockito.`when`(
             events.existsByTenantIdAndIdempotencyKey(Mockito.any(UUID::class.java) ?: tenant, Mockito.anyString() ?: ""),
