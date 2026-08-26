@@ -18,6 +18,7 @@ spring:
     locations: classpath:db/migration
     placeholders:
       seed_demo: ${SEED_DEMO:true}
+      seed_ledger: ${SEED_LEDGER:true}
 
 server:
   port: 8080
@@ -36,6 +37,23 @@ reconcile:
     origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:8081,http://127.0.0.1:5173,http://127.0.0.1:8081}
   auth:
     trusted-proxies: ${TRUSTED_PROXIES:}
+  oauth:
+    frontend-redirect: ${OAUTH_FRONTEND_REDIRECT:http://localhost:5173/integracoes}
+    mercado-livre:
+      client-id: ${MERCADO_LIVRE_CLIENT_ID:}
+      client-secret: ${MERCADO_LIVRE_CLIENT_SECRET:}
+      redirect-uri: ${MERCADO_LIVRE_REDIRECT_URI:http://localhost:8080/api/v1/integrations/oauth/ml/callback}
+      authorize-url: ${MERCADO_LIVRE_AUTHORIZE_URL:https://auth.mercadolivre.com.br/authorization}
+      token-url: ${MERCADO_LIVRE_TOKEN_URL:https://api.mercadolibre.com/oauth/token}
+      api-url: ${MERCADO_LIVRE_API_URL:https://api.mercadolibre.com}
+      pkce: ${MERCADO_LIVRE_PKCE:true}
+    shopee:
+      client-id: ${SHOPEE_PARTNER_ID:}
+      client-secret: ${SHOPEE_PARTNER_KEY:}
+      redirect-uri: ${SHOPEE_REDIRECT_URI:http://localhost:8080/api/v1/integrations/oauth/shopee/callback}
+      authorize-url: ${SHOPEE_AUTHORIZE_URL:https://open.shopee.com.br/auth}
+      token-url: ${SHOPEE_TOKEN_URL:https://openplatform.shopee.com.br/api/v2/auth/token/get}
+      api-url: ${SHOPEE_API_URL:https://openplatform.shopee.com.br}
 
 logging:
   pattern:

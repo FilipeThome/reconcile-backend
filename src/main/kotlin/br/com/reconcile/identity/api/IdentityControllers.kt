@@ -62,7 +62,11 @@ class SettingsController(
             "tenant" to mapOf(
                 "id" to tenant.externalId,
                 "name" to tenant.name,
-                "sellerId" to (sellers.findByTenantId(tenant.id).firstOrNull()?.sellerExternalId ?: ""),
+                "sellerId" to (
+                    sellers.findByTenantIdAndMarketplace(tenant.id, "Mercado Livre")?.sellerExternalId
+                        ?: sellers.findByTenantId(tenant.id).firstOrNull()?.sellerExternalId
+                        ?: ""
+                    ),
             ),
             "currentUser" to mapOf(
                 "name" to auth.displayName,

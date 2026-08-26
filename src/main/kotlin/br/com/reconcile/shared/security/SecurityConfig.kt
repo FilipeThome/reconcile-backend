@@ -64,7 +64,7 @@ class SecurityConfig(
                 }
             }
             .authorizeHttpRequests {
-                it.requestMatchers("/api/v1/auth/login", "/api/v1/health").permitAll()
+                it.requestMatchers("/api/v1/auth/login", "/api/v1/health", "/api/v1/integrations/oauth/**").permitAll()
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .anyRequest().authenticated()
             }

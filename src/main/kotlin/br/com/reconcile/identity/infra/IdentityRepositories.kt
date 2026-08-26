@@ -15,4 +15,5 @@ interface UserRepository : JpaRepository<UserEntity, UUID> {
 
 interface SellerAccountRepository : JpaRepository<SellerAccountEntity, UUID> {
     fun findByTenantId(tenantId: UUID): List<SellerAccountEntity>
+    fun findByTenantIdAndMarketplace(tenantId: UUID, marketplace: String): SellerAccountEntity?
 }
