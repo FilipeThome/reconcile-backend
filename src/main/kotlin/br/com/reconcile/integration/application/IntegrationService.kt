@@ -136,7 +136,11 @@ class IntegrationService(
             ?: throw NotFoundException("Integração $externalId não encontrada")
 
     private fun upsertSeller(tokens: OAuthTokens) {
-        val marketplace = if (tokens.provider == "ml") "Mercado Livre" else "Shopee"
+        val marketplace = when (tokens.provider) {
+            "ml" -> "Mercado Livre"
+            "amazon" -> "Amazon"
+            else -> "Shopee"
+        }
         val existing = sellers.findByTenantIdAndMarketplace(tokens.tenantId, marketplace)
         if (existing == null) {
             sellers.save(

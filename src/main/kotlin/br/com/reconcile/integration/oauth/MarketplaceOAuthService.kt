@@ -59,6 +59,7 @@ class MarketplaceOAuthService(
         return when (normalizeProvider(provider)) {
             "ml" -> refreshMercadoLivre(refreshToken)
             "shopee" -> refreshShopee(refreshToken, sellerExternalId)
+            "amazon" -> refreshAmazon(refreshToken)
             else -> TokenLease(accessToken, refreshToken, expiresAt, rotated = false)
         }
     }
@@ -74,12 +75,20 @@ class MarketplaceOAuthService(
         val url = when (provider) {
             "ml" -> mercadoLivreAuthorizeUrl(config, state, verifier)
             "shopee" -> shopeeAuthorizeUrl(config, state)
+            "amazon" -> amazonAuthorizeUrl(config, state)
             else -> throw UnprocessableException("Provedor OAuth $provider não suportado")
         }
         return OAuthStart(url)
     }
 
-    fun exchange(provider: String, code: String?, state: String?, shopId: Long?, mainAccountId: Long?): OAuthTokens {
+    fun exchange(
+        provider: String,
+        code: String?,
+        state: String?,
+        shopId: Long?,
+        mainAccountId: Long?,
+        sellingPartnerId: String? = null,
+    ): OAuthTokens {
         val normalized = normalizeProvider(provider)
         val pendingAuth = consumeState(state)
         if (pendingAuth.provider != normalized) {
@@ -92,6 +101,7 @@ class MarketplaceOAuthService(
         return when (normalized) {
             "ml" -> exchangeMercadoLivre(pendingAuth.tenantId, config, code, pendingAuth.verifier)
             "shopee" -> exchangeShopee(pendingAuth.tenantId, config, code, shopId, mainAccountId)
+            "amazon" -> exchangeAmazon(pendingAuth.tenantId, config, code, sellingPartnerId)
             else -> throw UnprocessableException("Provedor OAuth $normalized não suportado")
         }
     }
@@ -109,6 +119,7 @@ class MarketplaceOAuthService(
         return if (config.clientId.isBlank() || config.clientSecret.isBlank() || config.redirectUri.isBlank()) {
             when (provider) {
                 "ml" -> "Defina MERCADO_LIVRE_CLIENT_ID, MERCADO_LIVRE_CLIENT_SECRET e a redirect URI no .env"
+                "amazon" -> "Defina AMAZON_CLIENT_ID, AMAZON_CLIENT_SECRET e a redirect URI no .env"
                 else -> "Defina SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY e a redirect URI no .env"
             }
         } else {
@@ -128,6 +139,16 @@ class MarketplaceOAuthService(
         }
         return builder.build().encode().toUriString()
     }
+
+    private fun amazonAuthorizeUrl(config: ProviderProperties, state: String): String =
+        UriComponentsBuilder.fromUriString(config.authorizeUrl)
+            .queryParam("application_id", config.clientId)
+            .queryParam("state", state)
+            .queryParam("redirect_uri", config.redirectUri)
+            .queryParam("version", "beta")
+            .build()
+            .encode()
+            .toUriString()
 
     private fun shopeeAuthorizeUrl(config: ProviderProperties, state: String): String =
         UriComponentsBuilder.fromUriString(config.authorizeUrl)
@@ -224,6 +245,58 @@ class MarketplaceOAuthService(
         )
     }
 
+    private fun exchangeAmazon(
+        tenantId: UUID,
+        config: ProviderProperties,
+        code: String,
+        sellingPartnerId: String?,
+    ): OAuthTokens {
+        val seller = sellingPartnerId?.trim().orEmpty()
+        if (!AMAZON_SELLER_ID.matches(seller)) {
+            throw UnprocessableException("selling_partner_id da Amazon é inválido")
+        }
+        val token = http.postForm(
+            config.tokenUrl,
+            mapOf(
+                "grant_type" to "authorization_code",
+                "code" to code,
+                "client_id" to config.clientId,
+                "client_secret" to config.clientSecret,
+                "redirect_uri" to config.redirectUri,
+            ),
+        )
+        val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Amazon")
+        return OAuthTokens(
+            provider = "amazon",
+            tenantId = tenantId,
+            sellerExternalId = seller,
+            accessToken = access,
+            refreshToken = stringValue(token, "refresh_token"),
+            expiresAt = expiresAt(token["expires_in"]),
+            sellerLabel = "OAuth seller $seller",
+        )
+    }
+
+    private fun refreshAmazon(refreshToken: String): TokenLease {
+        val config = properties.amazon
+        val token = http.postForm(
+            config.tokenUrl,
+            mapOf(
+                "grant_type" to "refresh_token",
+                "refresh_token" to refreshToken,
+                "client_id" to config.clientId,
+                "client_secret" to config.clientSecret,
+            ),
+        )
+        val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Amazon")
+        return TokenLease(
+            accessToken = access,
+            refreshToken = stringValue(token, "refresh_token") ?: refreshToken,
+            expiresAt = expiresAt(token["expires_in"]),
+            rotated = true,
+        )
+    }
+
     private fun refreshMercadoLivre(refreshToken: String): TokenLease {
         val config = properties.mercadoLivre
         val token = http.postForm(
@@ -301,6 +374,7 @@ class MarketplaceOAuthService(
     private fun configOf(provider: String) = when (provider) {
         "ml" -> properties.mercadoLivre
         "shopee" -> properties.shopee
+        "amazon" -> properties.amazon
         else -> throw UnprocessableException("Provedor OAuth $provider não suportado")
     }
 
@@ -310,6 +384,7 @@ class MarketplaceOAuthService(
     private fun providerOf(externalId: String) = when (externalId.lowercase()) {
         "ml", "mercadolivre", "mercado-livre" -> "ml"
         "shopee" -> "shopee"
+        "amazon" -> "amazon"
         else -> null
     }
 
@@ -391,6 +466,10 @@ class MarketplaceOAuthService(
         val nickname: String?,
         val siteId: String?,
     )
+
+    companion object {
+        val AMAZON_SELLER_ID = Regex("^[A-Za-z0-9]{1,64}$")
+    }
 
     private data class PendingAuth(
         val tenantId: UUID,

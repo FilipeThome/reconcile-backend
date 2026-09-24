@@ -54,6 +54,19 @@ reconcile:
       authorize-url: ${SHOPEE_AUTHORIZE_URL:https://open.shopee.com.br/auth}
       token-url: ${SHOPEE_TOKEN_URL:https://openplatform.shopee.com.br/api/v2/auth/token/get}
       api-url: ${SHOPEE_API_URL:https://openplatform.shopee.com.br}
+    amazon:
+      client-id: ${AMAZON_CLIENT_ID:}
+      client-secret: ${AMAZON_CLIENT_SECRET:}
+      redirect-uri: ${AMAZON_REDIRECT_URI:http://localhost:8080/api/v1/integrations/oauth/amazon/callback}
+      authorize-url: ${AMAZON_AUTHORIZE_URL:https://sellercentral.amazon.com.br/apps/authorize/consent}
+      token-url: ${AMAZON_TOKEN_URL:https://api.amazon.com/auth/o2/token}
+      api-url: ${AMAZON_API_URL:https://sellingpartnerapi-na.amazon.com}
+      pkce: false
+      aws-access-key: ${AMAZON_AWS_ACCESS_KEY:}
+      aws-secret-key: ${AMAZON_AWS_SECRET_KEY:}
+      aws-session-token: ${AMAZON_AWS_SESSION_TOKEN:}
+      aws-region: ${AMAZON_AWS_REGION:us-east-1}
+      marketplace-id: ${AMAZON_MARKETPLACE_ID:A2Q3Y263D00KWC}
 
 logging:
   pattern:
