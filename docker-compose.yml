@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: reconcile
       POSTGRES_USER: ${DATABASE_USER:-reconcile}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-reconcile}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Defina DATABASE_PASSWORD no arquivo .env (veja .env.example)}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -28,9 +28,26 @@ services:
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/reconcile
       DATABASE_USER: ${DATABASE_USER:-reconcile}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-reconcile}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Defina DATABASE_PASSWORD no arquivo .env (veja .env.example)}
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no arquivo .env (veja .env.example)}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8081,http://127.0.0.1:5173,http://127.0.0.1:8081}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      SEED_LEDGER: ${SEED_LEDGER:-true}
+      OAUTH_FRONTEND_REDIRECT: ${OAUTH_FRONTEND_REDIRECT:-http://localhost:5173/integracoes}
+      MERCADO_LIVRE_CLIENT_ID: ${MERCADO_LIVRE_CLIENT_ID:-}
+      MERCADO_LIVRE_CLIENT_SECRET: ${MERCADO_LIVRE_CLIENT_SECRET:-}
+      MERCADO_LIVRE_REDIRECT_URI: ${MERCADO_LIVRE_REDIRECT_URI:-http://localhost:8080/api/v1/integrations/oauth/ml/callback}
+      MERCADO_LIVRE_AUTHORIZE_URL: ${MERCADO_LIVRE_AUTHORIZE_URL:-https://auth.mercadolivre.com.br/authorization}
+      MERCADO_LIVRE_TOKEN_URL: ${MERCADO_LIVRE_TOKEN_URL:-https://api.mercadolibre.com/oauth/token}
+      MERCADO_LIVRE_API_URL: ${MERCADO_LIVRE_API_URL:-https://api.mercadolibre.com}
+      MERCADO_LIVRE_PKCE: ${MERCADO_LIVRE_PKCE:-true}
+      SHOPEE_PARTNER_ID: ${SHOPEE_PARTNER_ID:-}
+      SHOPEE_PARTNER_KEY: ${SHOPEE_PARTNER_KEY:-}
+      SHOPEE_REDIRECT_URI: ${SHOPEE_REDIRECT_URI:-http://localhost:8080/api/v1/integrations/oauth/shopee/callback}
+      SHOPEE_AUTHORIZE_URL: ${SHOPEE_AUTHORIZE_URL:-https://open.shopee.com.br/auth}
+      SHOPEE_TOKEN_URL: ${SHOPEE_TOKEN_URL:-https://openplatform.shopee.com.br/api/v2/auth/token/get}
+      SHOPEE_API_URL: ${SHOPEE_API_URL:-https://openplatform.shopee.com.br}
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:

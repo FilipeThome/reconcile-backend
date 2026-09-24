@@ -47,8 +47,8 @@ class JwtService(
 
     private fun validateSecret(secret: String): ByteArray {
         val bytes = secret.toByteArray(StandardCharsets.UTF_8)
-        check(bytes.size >= 32) {
-            "JWT_SECRET deve ter pelo menos 32 caracteres. Copie backend/.env.example para .env e gere um valor aleatório."
+        check(bytes.size >= 64) {
+            "JWT_SECRET deve ter pelo menos 64 caracteres (chave HS512). Copie backend/.env.example para .env e gere um valor aleatório."
         }
         check(secret != "change-me-in-production-use-256-bit-secret-key!!") {
             "JWT_SECRET padrão inseguro. Defina um segredo próprio no .env."

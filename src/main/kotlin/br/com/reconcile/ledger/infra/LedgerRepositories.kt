@@ -31,9 +31,11 @@ interface PayoutOrderRepository : JpaRepository<PayoutOrderEntity, PayoutOrderId
 interface FeeRepository : JpaRepository<FeeEntity, UUID> {
     fun findByTenantId(tenantId: UUID): List<FeeEntity>
     fun findByTenantIdAndOrderId(tenantId: UUID, orderId: UUID): List<FeeEntity>
+    fun findByTenantIdAndExternalId(tenantId: UUID, externalId: String): FeeEntity?
 }
 
 interface RefundRepository : JpaRepository<RefundEntity, UUID> {
     fun findByTenantId(tenantId: UUID): List<RefundEntity>
     fun findByTenantIdAndOrderId(tenantId: UUID, orderId: UUID): List<RefundEntity>
+    fun findByTenantIdAndExternalId(tenantId: UUID, externalId: String): RefundEntity?
 }

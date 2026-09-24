@@ -37,6 +37,7 @@ class InvoiceEntity(
 interface InvoiceRepository : JpaRepository<InvoiceEntity, UUID> {
     fun findByTenantId(tenantId: UUID): List<InvoiceEntity>
     fun findByTenantIdAndOrderId(tenantId: UUID, orderId: UUID): InvoiceEntity?
+    fun findByTenantIdAndExternalId(tenantId: UUID, externalId: String): InvoiceEntity?
 }
 
 fun interface FiscalAdapter {
