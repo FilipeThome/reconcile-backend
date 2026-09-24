@@ -11,6 +11,7 @@ import br.com.reconcile.shared.api.UnprocessableException
 import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.time.Instant
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -28,9 +29,15 @@ class ShopeeCatalog(
         if (config.clientId.isBlank() || config.clientSecret.isBlank()) {
             throw UnprocessableException("Defina SHOPEE_PARTNER_ID e SHOPEE_PARTNER_KEY no .env")
         }
-        val shopId = credentials.sellerExternalId.removePrefix("main:").ifBlank {
-            throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+        val shopId = shopId(credentials.sellerExternalId)
+        val sales = mutableListOf<br.com.reconcile.integration.ingestion.CanonicalSale>()
+        for (slice in slices(window)) {
+            sales += pullSlice(credentials.accessToken, shopId, slice)
         }
+        return CatalogSnapshot(sales)
+    }
+
+    private fun pullSlice(accessToken: String, shopId: String, window: IngestionWindow): List<br.com.reconcile.integration.ingestion.CanonicalSale> {
         val sales = mutableListOf<br.com.reconcile.integration.ingestion.CanonicalSale>()
         var cursor = ""
         var page = 0
@@ -42,7 +49,7 @@ class ShopeeCatalog(
                 "page_size" to "50",
             )
             if (cursor.isNotBlank()) extra["cursor"] = cursor
-            val list = signedGet("/api/v2/order/get_order_list", credentials.accessToken, shopId, extra)
+            val list = signedGet("/api/v2/order/get_order_list", accessToken, shopId, extra)
             if (list["error"]?.toString()?.isNotBlank() == true) {
                 throw UnprocessableException(list["message"]?.toString() ?: "Falha ao listar pedidos Shopee")
             }
@@ -51,22 +58,60 @@ class ShopeeCatalog(
             if (numbers.isNotEmpty()) {
                 val detail = signedGet(
                     "/api/v2/order/get_order_detail",
-                    credentials.accessToken,
+                    accessToken,
                     shopId,
                     mapOf(
                         "order_sn_list" to numbers.joinToString(","),
-                        "response_optional_fields" to "buyer_username,item_list,total_amount,payment_method,escrow_amount,pay_time",
+                        "response_optional_fields" to "buyer_username,item_list,total_amount,payment_method,pay_time",
                     ),
                 )
                 CatalogJson.maps(CatalogJson.child(detail, "response")["order_list"]).forEach { order ->
-                    mapper.toSale(order)?.let(sales::add)
+                    mapper.toSale(withEscrow(accessToken, shopId, order))?.let(sales::add)
                 }
             }
             cursor = CatalogJson.text(response, "next_cursor").orEmpty()
             page++
             if (cursor.isBlank() || response["more"] == false) break
         }
-        return CatalogSnapshot(sales)
+        return sales
+    }
+
+    private fun withEscrow(accessToken: String, shopId: String, order: Map<String, Any?>): Map<String, Any?> {
+        val orderSn = CatalogJson.text(order, "order_sn") ?: return order
+        val escrow = signedGet(
+            "/api/v2/payment/get_escrow_detail",
+            accessToken,
+            shopId,
+            mapOf("order_sn" to orderSn),
+            optional = true,
+        )
+        if (escrow["error"]?.toString()?.isNotBlank() == true) return order
+        val income = CatalogJson.child(CatalogJson.child(escrow, "response"), "order_income")
+        if (income.isEmpty()) return order
+        return order + ("escrow_detail" to income)
+    }
+
+    private fun shopId(sellerExternalId: String): String {
+        val raw = sellerExternalId.trim()
+        val shop = if (raw.startsWith("m:")) raw.substringAfterLast(':') else raw
+        if (raw.startsWith("main:") || shop.toLongOrNull() == null) {
+            throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+        }
+        return shop
+    }
+
+    private fun slices(window: IngestionWindow): List<IngestionWindow> {
+        val max = Duration.ofDays(15)
+        if (!window.from.isBefore(window.to)) return listOf(window)
+        val slices = mutableListOf<IngestionWindow>()
+        var cursor = window.from
+        while (!cursor.isAfter(window.to)) {
+            val end = minOf(cursor.plus(max), window.to)
+            slices.add(IngestionWindow(cursor, end))
+            if (!end.isBefore(window.to)) break
+            cursor = end.plusSeconds(1)
+        }
+        return slices
     }
 
     private fun signedGet(
@@ -74,6 +119,7 @@ class ShopeeCatalog(
         accessToken: String,
         shopId: String,
         extra: Map<String, String>,
+        optional: Boolean = false,
     ): Map<String, Any?> {
         val config = properties.shopee
         val timestamp = Instant.now().epochSecond
@@ -85,7 +131,8 @@ class ShopeeCatalog(
             .queryParam("access_token", accessToken)
             .queryParam("shop_id", shopId)
         extra.filterValues { it.isNotBlank() }.forEach { (key, value) -> builder.queryParam(key, value) }
-        return http.getJson(builder.build().encode().toUriString(), accessToken)
+        val url = builder.build().encode().toUriString()
+        return if (optional) http.getJsonOrEmpty(url, accessToken) else http.getJson(url, accessToken)
     }
 
     private fun hmacHex(secret: String, value: String): String {

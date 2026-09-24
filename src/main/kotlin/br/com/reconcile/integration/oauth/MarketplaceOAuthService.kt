@@ -227,9 +227,14 @@ class MarketplaceOAuthService(
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
-        val seller = shopId?.toString()
-            ?: mainAccountId?.let { "main:$it" }
-            ?: "shopee"
+        val listedShop = longList(token["shop_id_list"]).firstOrNull()
+        val merchantId = longList(token["merchant_id_list"]).firstOrNull()
+        val seller = when {
+            shopId != null -> shopId.toString()
+            listedShop != null && merchantId != null -> "m:$merchantId:$listedShop"
+            listedShop != null -> listedShop.toString()
+            else -> throw UnprocessableException("Shopee não devolveu shop_id. Reconecte autorizando uma loja.")
+        }
         return OAuthTokens(
             provider = "shopee",
             tenantId = tenantId,
@@ -328,7 +333,16 @@ class MarketplaceOAuthService(
             "refresh_token" to refreshToken,
             "partner_id" to config.clientId.toLongOrNull(),
         )
-        shopId?.toLongOrNull()?.let { body["shop_id"] = it }
+        val raw = shopId?.trim().orEmpty()
+        if (raw.startsWith("m:")) {
+            val merchant = raw.removePrefix("m:").substringBefore(':').toLongOrNull()
+                ?: throw UnprocessableException("Merchant da Shopee ausente. Reconecte a integração.")
+            body["merchant_id"] = merchant
+        } else {
+            val shop = raw.toLongOrNull()
+                ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+            body["shop_id"] = shop
+        }
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
@@ -418,6 +432,17 @@ class MarketplaceOAuthService(
 
     private fun stringValue(payload: Map<String, Any?>, key: String) =
         payload[key]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+
+    private fun longList(raw: Any?): List<Long> = when (raw) {
+        is List<*> -> raw.mapNotNull { item ->
+            when (item) {
+                is Number -> item.toLong()
+                is String -> item.toLongOrNull()
+                else -> null
+            }
+        }
+        else -> emptyList()
+    }
 
     private fun expiresAt(raw: Any?): Instant? {
         val seconds = when (raw) {

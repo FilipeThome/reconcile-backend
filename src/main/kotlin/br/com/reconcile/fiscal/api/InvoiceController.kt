@@ -3,6 +3,7 @@ package br.com.reconcile.fiscal.api
 import br.com.reconcile.fiscal.infra.FiscalAdapter
 import br.com.reconcile.fiscal.infra.InvoiceRepository
 import br.com.reconcile.ledger.infra.OrderRepository
+import br.com.reconcile.ledger.infra.PaymentRepository
 import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.security.currentUser
 import org.springframework.security.access.prepost.PreAuthorize
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController
 class InvoiceController(
     private val invoices: InvoiceRepository,
     private val orders: OrderRepository,
+    private val payments: PaymentRepository,
     private val adapter: FiscalAdapter,
 ) {
     @GetMapping
@@ -29,9 +31,15 @@ class InvoiceController(
         val tenant = currentUser().tenantId
         val filter = PeriodFilter.of(from, to, marketplace, gateway)
         val orderMap = orders.findByTenantIdOrderByOrderedAtDesc(tenant).associateBy { it.id }
+        val gatewayByOrder = payments.findByTenantIdOrderByPaidAtDesc(tenant)
+            .groupBy { it.orderId }
+            .mapValues { (_, rows) -> rows.firstOrNull()?.gateway }
         val docs = invoices.findByTenantId(tenant).mapNotNull { invoice ->
             val order = orderMap[invoice.orderId]
-            if (!filter.matchesInstant(invoice.issuedAt ?: order?.orderedAt) || !filter.matchesMarketplace(order?.marketplace)) {
+            if (!filter.matchesInstant(invoice.issuedAt ?: order?.orderedAt) ||
+                !filter.matchesMarketplace(order?.marketplace) ||
+                !filter.matchesGateway(gatewayByOrder[invoice.orderId])
+            ) {
                 return@mapNotNull null
             }
             mapOf(
@@ -49,7 +57,11 @@ class InvoiceController(
             )
         }
         val pending = orderMap.values
-            .filter { filter.matchesInstant(it.orderedAt) && filter.matchesMarketplace(it.marketplace) }
+            .filter {
+                filter.matchesInstant(it.orderedAt) &&
+                    filter.matchesMarketplace(it.marketplace) &&
+                    filter.matchesGateway(gatewayByOrder[it.id])
+            }
             .filter { invoices.findByTenantIdAndOrderId(tenant, it.id) == null }
             .map { it.externalId }
         return mapOf("documents" to docs, "pendingOrders" to pending)

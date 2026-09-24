@@ -47,6 +47,7 @@ class MarketplaceSaleMapperTest {
         assertEquals(2, sale.order.items)
         assertEquals(BigDecimal("100.00"), sale.order.grossAmount)
         assertEquals(BigDecimal("87.50"), sale.order.expectedNet)
+        assertEquals(BigDecimal("87.50"), sale.order.actualNet)
         assertEquals("Cartão", sale.payments.single().method)
         assertEquals("aprovado", sale.payments.single().status)
         assertTrue(sale.fees.any { it.type == "Comissão marketplace" })
@@ -100,6 +101,19 @@ class MarketplaceSaleMapperTest {
         assertEquals("Pix", sale.payments.single().method)
         assertEquals("Shopee", sale.payments.single().gateway)
         assertEquals(BigDecimal("70.10"), sale.order.expectedNet)
+        assertEquals(BigDecimal("70.10"), sale.order.actualNet)
+
+        val fromEscrow = shopee.toSale(
+            mapOf(
+                "order_sn" to "220101ABCDEF",
+                "create_time" to 1750000000,
+                "order_status" to "COMPLETED",
+                "total_amount" to 80.4,
+                "escrow_detail" to mapOf("escrow_amount" to 70.1, "commission_fee" to 10.3),
+            ),
+        )!!
+        assertEquals(BigDecimal("70.10"), fromEscrow.order.actualNet)
+        assertEquals(BigDecimal("10.30"), fromEscrow.fees.single().actual)
         assertNull(sale.invoice)
         assertTrue(sale.refunds.isEmpty())
     }

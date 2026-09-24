@@ -397,10 +397,12 @@ class DashboardService(
             matches(order, paymentsByOrder[order.id]?.firstOrNull()?.gateway, filter.previous())
         }
         val orderIds = scoped.map { it.externalId }.toSet()
-        val scopedCases = cases.findByTenantIdOrderByOpenedAtDesc(tenant)
-            .filter { it.orderExternalId in orderIds }
+        val previousIds = previous.map { it.externalId }.toSet()
+        val allCases = cases.findByTenantIdOrderByOpenedAtDesc(tenant)
+        val scopedCases = allCases.filter { it.orderExternalId in orderIds }
+        val priorCases = allCases.filter { it.orderExternalId in previousIds }
         val current = totals(scoped, scopedCases, invoicesByOrder)
-        val prior = totals(previous, emptyList(), invoicesByOrder)
+        val prior = totals(previous, priorCases, invoicesByOrder)
         val openCases = scopedCases.filter { it.status == "aberta" || it.status == "em_analise" }
         val upcoming = payouts.findByTenantIdOrderByPaidAtDesc(tenant)
             .filter { it.status == "previsto" && filter.matchesGateway(it.gateway) }

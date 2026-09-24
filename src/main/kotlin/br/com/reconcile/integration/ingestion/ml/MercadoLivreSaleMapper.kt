@@ -32,13 +32,19 @@ class MercadoLivreSaleMapper {
             }
         }
         val expectedNet = Money.scale(gross - saleFees - paymentFees)
-        val actualNet = payments.fold(Money.ZERO) { acc, payment ->
-            val net = CatalogJson.decimal(payment, "transaction_amount") -
-                CatalogJson.maps(payment["fee_details"]).fold(Money.ZERO) { inner, fee ->
-                    inner + CatalogJson.decimal(fee, "amount")
-                }
-            acc + net
-        }.let { if (it > Money.ZERO) Money.scale(it) else null }
+        val actualNet = if (payments.isEmpty()) {
+            null
+        } else {
+            Money.scale(
+                payments.fold(Money.ZERO) { acc, payment ->
+                    val net = CatalogJson.decimal(payment, "transaction_amount") -
+                        CatalogJson.maps(payment["fee_details"]).fold(Money.ZERO) { inner, fee ->
+                            inner + CatalogJson.decimal(fee, "amount")
+                        }
+                    acc + net
+                } - saleFees,
+            ).takeIf { it > Money.ZERO }
+        }
         val canonicalPayments = payments.mapIndexed { index, payment -> toPayment(id, orderedAt, payment, index) }
         return CanonicalSale(
             order = CanonicalOrder(
