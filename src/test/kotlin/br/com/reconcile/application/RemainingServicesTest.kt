@@ -290,7 +290,11 @@ class RemainingServicesTest {
             listOf(InvoiceEntity(tenantId = tenant, orderId = orderId, issuedAt = Instant.parse("2026-05-04T12:00:00Z"), accessKey = "k")),
         )
         Mockito.`when`(invoices.findByTenantIdAndOrderId(tenant, orderId)).thenReturn(null)
-        val fiscal = InvoiceController(invoices, orders, StubFiscalAdapter()).list("2026-05-01", "2026-05-31", "Mercado Livre", null)
+        Mockito.`when`(payments.findByTenantIdOrderByPaidAtDesc(tenant)).thenReturn(
+            listOf(PaymentEntity(tenantId = tenant, orderId = orderId, gateway = "Mercado Pago")),
+        )
+        val fiscal = InvoiceController(invoices, orders, payments, StubFiscalAdapter())
+            .list("2026-05-01", "2026-05-31", "Mercado Livre", "Mercado Pago")
         assertTrue((fiscal["documents"] as List<*>).isNotEmpty())
     }
 }

@@ -206,9 +206,10 @@ class MarketplaceOAuthService(
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
+        val listedShop = longList(token["shop_id_list"]).firstOrNull()
         val seller = shopId?.toString()
-            ?: mainAccountId?.let { "main:$it" }
-            ?: "shopee"
+            ?: listedShop?.toString()
+            ?: throw UnprocessableException("Shopee não devolveu shop_id. Reconecte autorizando uma loja.")
         return OAuthTokens(
             provider = "shopee",
             tenantId = tenantId,
@@ -255,7 +256,9 @@ class MarketplaceOAuthService(
             "refresh_token" to refreshToken,
             "partner_id" to config.clientId.toLongOrNull(),
         )
-        shopId?.toLongOrNull()?.let { body["shop_id"] = it }
+        val shop = shopId?.toLongOrNull()
+            ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+        body["shop_id"] = shop
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
@@ -343,6 +346,17 @@ class MarketplaceOAuthService(
 
     private fun stringValue(payload: Map<String, Any?>, key: String) =
         payload[key]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+
+    private fun longList(raw: Any?): List<Long> = when (raw) {
+        is List<*> -> raw.mapNotNull { item ->
+            when (item) {
+                is Number -> item.toLong()
+                is String -> item.toLongOrNull()
+                else -> null
+            }
+        }
+        else -> emptyList()
+    }
 
     private fun expiresAt(raw: Any?): Instant? {
         val seconds = when (raw) {
