@@ -83,6 +83,7 @@ class ShopeeCatalog(
             accessToken,
             shopId,
             mapOf("order_sn" to orderSn),
+            optional = true,
         )
         if (escrow["error"]?.toString()?.isNotBlank() == true) return order
         val income = CatalogJson.child(CatalogJson.child(escrow, "response"), "order_income")
@@ -92,10 +93,11 @@ class ShopeeCatalog(
 
     private fun shopId(sellerExternalId: String): String {
         val raw = sellerExternalId.trim()
-        if (raw.startsWith("main:") || raw.toLongOrNull() == null) {
+        val shop = if (raw.startsWith("m:")) raw.substringAfterLast(':') else raw
+        if (raw.startsWith("main:") || shop.toLongOrNull() == null) {
             throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
         }
-        return raw
+        return shop
     }
 
     private fun slices(window: IngestionWindow): List<IngestionWindow> {
@@ -103,10 +105,11 @@ class ShopeeCatalog(
         if (!window.from.isBefore(window.to)) return listOf(window)
         val slices = mutableListOf<IngestionWindow>()
         var cursor = window.from
-        while (cursor.isBefore(window.to)) {
+        while (!cursor.isAfter(window.to)) {
             val end = minOf(cursor.plus(max), window.to)
             slices.add(IngestionWindow(cursor, end))
-            cursor = end
+            if (!end.isBefore(window.to)) break
+            cursor = end.plusSeconds(1)
         }
         return slices
     }
@@ -116,6 +119,7 @@ class ShopeeCatalog(
         accessToken: String,
         shopId: String,
         extra: Map<String, String>,
+        optional: Boolean = false,
     ): Map<String, Any?> {
         val config = properties.shopee
         val timestamp = Instant.now().epochSecond
@@ -127,7 +131,8 @@ class ShopeeCatalog(
             .queryParam("access_token", accessToken)
             .queryParam("shop_id", shopId)
         extra.filterValues { it.isNotBlank() }.forEach { (key, value) -> builder.queryParam(key, value) }
-        return http.getJson(builder.build().encode().toUriString(), accessToken)
+        val url = builder.build().encode().toUriString()
+        return if (optional) http.getJsonOrEmpty(url, accessToken) else http.getJson(url, accessToken)
     }
 
     private fun hmacHex(secret: String, value: String): String {
