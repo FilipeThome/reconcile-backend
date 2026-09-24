@@ -44,7 +44,8 @@ class AmazonCatalog(
                 val id = CatalogJson.text(order, "AmazonOrderId") ?: return@forEach
                 if (!ORDER_ID.matches(id)) return@forEach
                 val items = orderItems(config, credentials.accessToken, id)
-                mapper.toSale(order, items)?.let(sales::add)
+                val finances = financialEvents(config, credentials.accessToken, id)
+                mapper.toSale(order, items, finances)?.let(sales::add)
             }
             nextToken = CatalogJson.text(payload, "NextToken").orEmpty()
             page++
@@ -62,6 +63,17 @@ class AmazonCatalog(
         val body = http.getAmazonJson(uri.toString(), signedHeaders(config, uri, accessToken))
         val payload = CatalogJson.child(body, "payload").ifEmpty { body }
         return CatalogJson.maps(payload["OrderItems"])
+    }
+
+    private fun financialEvents(config: ProviderProperties, accessToken: String, orderId: String): Map<String, Any?> {
+        val uri = UriComponentsBuilder.fromUriString(config.apiUrl.trimEnd('/'))
+            .pathSegment("finances", "v0", "orders", orderId, "financialEvents")
+            .build()
+            .encode()
+            .toUri()
+        val body = http.getAmazonJsonOrEmpty(uri.toString(), signedHeaders(config, uri, accessToken))
+        val payload = CatalogJson.child(body, "payload").ifEmpty { body }
+        return CatalogJson.child(payload, "FinancialEvents").ifEmpty { payload }
     }
 
     private fun signedHeaders(config: ProviderProperties, uri: URI, accessToken: String) =

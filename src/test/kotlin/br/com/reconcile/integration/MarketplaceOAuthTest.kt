@@ -215,6 +215,14 @@ class MarketplaceOAuthTest {
 
         Mockito.doThrow(IllegalStateException("boom")).`when`(service).exchange("ml", "c", "s", null, null)
         assertTrue(controller.callback("ml", "c", "s", null, null, null, null).url!!.contains("oauth_error"))
+
+        val amazon = OAuthTokens("amazon", TestAuth.tenantId, "A1AMZDEMO204918", "tok", null, Instant.now())
+        Mockito.`when`(service.exchange("amazon", "spapi-code", "st", null, null, "A1AMZDEMO204918")).thenReturn(amazon)
+        Mockito.`when`(service.frontendRedirect(connected = "amazon")).thenReturn("http://localhost:5173/integracoes?connected=amazon")
+        assertTrue(
+            controller.callback("amazon", null, "st", null, null, null, null, "A1AMZDEMO204918", "spapi-code")
+                .url!!.contains("connected=amazon"),
+        )
     }
 
     @Test

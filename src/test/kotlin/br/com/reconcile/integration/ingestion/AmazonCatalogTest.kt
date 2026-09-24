@@ -25,7 +25,7 @@ class AmazonCatalogTest {
         override fun getAmazonJson(url: String, headers: Map<String, String>): Map<String, Any?> {
             calls += url to headers
             return if (url.contains("orderItems")) {
-                mapOf("payload" to mapOf("OrderItems" to listOf(mapOf("QuantityOrdered" to 1, "ReferralFee" to "10.00"))))
+                mapOf("payload" to mapOf("OrderItems" to listOf(mapOf("QuantityOrdered" to 1, "ItemPrice" to mapOf("Amount" to "100.00")))))
             } else {
                 mapOf(
                     "payload" to mapOf(
@@ -41,6 +41,27 @@ class AmazonCatalogTest {
                     ),
                 )
             }
+        }
+
+        override fun getAmazonJsonOrEmpty(url: String, headers: Map<String, String>): Map<String, Any?> {
+            calls += url to headers
+            return mapOf(
+                "payload" to mapOf(
+                    "FinancialEvents" to mapOf(
+                        "ShipmentEventList" to listOf(
+                            mapOf(
+                                "ShipmentItemList" to listOf(
+                                    mapOf(
+                                        "ItemFeeList" to listOf(
+                                            mapOf("FeeType" to "Commission", "FeeAmount" to mapOf("CurrencyAmount" to -10.0)),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
         }
     }
     private val properties = MarketplaceOAuthProperties().apply {
@@ -77,6 +98,8 @@ class AmazonCatalogTest {
         assertEquals("Atza|token", list.second["x-amz-access-token"])
         assertTrue(calls.none { it.first.contains("../") || it.first.contains("admin") })
         assertTrue(calls.any { it.first.contains("/orders/v0/orders/702-0000001-0000001/orderItems") })
+        assertTrue(calls.any { it.first.contains("/finances/v0/orders/702-0000001-0000001/financialEvents") })
+        assertEquals(java.math.BigDecimal("90.00"), snapshot.sales.single().order.actualNet)
     }
 
     @Test
