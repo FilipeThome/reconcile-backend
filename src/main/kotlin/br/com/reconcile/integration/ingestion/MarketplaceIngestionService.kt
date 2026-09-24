@@ -33,7 +33,6 @@ class MarketplaceIngestionService(
             connection.accessToken = lease.accessToken
             connection.refreshToken = lease.refreshToken
             connection.tokenExpiresAt = lease.expiresAt
-            lease.sellerExternalId?.let { connection.sellerExternalId = it }
             connections.save(connection)
         }
         val snapshot = try {
