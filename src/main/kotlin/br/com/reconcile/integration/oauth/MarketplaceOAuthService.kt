@@ -207,9 +207,12 @@ class MarketplaceOAuthService(
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
         val listedShop = longList(token["shop_id_list"]).firstOrNull()
-        val seller = shopId?.toString()
-            ?: listedShop?.toString()
-            ?: throw UnprocessableException("Shopee não devolveu shop_id. Reconecte autorizando uma loja.")
+        val merchantId = longList(token["merchant_id_list"]).firstOrNull()
+        val seller = when {
+            shopId != null -> shopId.toString()
+            listedShop != null && merchantId != null -> "m:$merchantId:$listedShop"
+            else -> throw UnprocessableException("Shopee não devolveu shop_id. Reconecte autorizando uma loja.")
+        }
         return OAuthTokens(
             provider = "shopee",
             tenantId = tenantId,
@@ -256,9 +259,16 @@ class MarketplaceOAuthService(
             "refresh_token" to refreshToken,
             "partner_id" to config.clientId.toLongOrNull(),
         )
-        val shop = shopId?.toLongOrNull()
-            ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
-        body["shop_id"] = shop
+        val raw = shopId?.trim().orEmpty()
+        if (raw.startsWith("m:")) {
+            val merchant = raw.removePrefix("m:").substringBefore(':').toLongOrNull()
+                ?: throw UnprocessableException("Merchant da Shopee ausente. Reconecte a integração.")
+            body["merchant_id"] = merchant
+        } else {
+            val shop = raw.toLongOrNull()
+                ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+            body["shop_id"] = shop
+        }
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
