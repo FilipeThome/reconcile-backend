@@ -67,6 +67,24 @@ class MarketplaceOAuthTest {
         assertTrue(shopee.contains("partner_id=10090"))
         assertTrue(shopee.contains("auth_type=seller"))
         assertTrue(shopee.contains("response_type=code"))
+
+        properties.amazon.apply {
+            clientId = "amzn1.application.demo"
+            clientSecret = "amz-secret"
+            redirectUri = "http://localhost:8080/api/v1/integrations/oauth/amazon/callback"
+            authorizeUrl = "https://sellercentral.amazon.com.br/apps/authorize/consent"
+            tokenUrl = "https://api.amazon.com/auth/o2/token"
+            apiUrl = "https://sellingpartnerapi-na.amazon.com"
+            pkce = false
+            awsAccessKey = "AKIADEMO"
+            awsSecretKey = "aws-secret"
+            awsRegion = "us-east-1"
+            marketplaceId = "A2Q3Y263D00KWC"
+        }
+        val amazon = oauth.authorizationUrl("amazon", TestAuth.tenantId, TestAuth.userId).authorizationUrl
+        assertTrue(amazon.startsWith("https://sellercentral.amazon.com.br/apps/authorize/consent?"))
+        assertTrue(amazon.contains("application_id=amzn1.application.demo"))
+        assertTrue(amazon.contains("redirect_uri="))
     }
 
     @Test
@@ -137,6 +155,37 @@ class MarketplaceOAuthTest {
             mapOf("error" to "error_auth", "message" to "bad sign"),
         )
         assertThrows<UnprocessableException> { oauth.exchange("shopee", "CODE4", stateErr, 1, null) }
+    }
+
+    @Test
+    fun `exchanges and refreshes amazon tokens and rejects a bad seller id`() {
+        properties.amazon.apply {
+            clientId = "amzn1.application.demo"
+            clientSecret = "amz-secret"
+            redirectUri = "http://localhost:8080/api/v1/integrations/oauth/amazon/callback"
+            authorizeUrl = "https://sellercentral.amazon.com.br/apps/authorize/consent"
+            tokenUrl = "https://api.amazon.com/auth/o2/token"
+            apiUrl = "https://sellingpartnerapi-na.amazon.com"
+            pkce = false
+        }
+        val start = oauth.authorizationUrl("amazon", TestAuth.tenantId, TestAuth.userId)
+        val state = query(start.authorizationUrl, "state")
+        assertThrows<UnprocessableException> { oauth.exchange("amazon", "CODE", state, null, null, "../evil") }
+        assertThrows<UnprocessableException> { oauth.exchange("amazon", "CODE", state, null, null, "seller id") }
+
+        val again = oauth.authorizationUrl("amazon", TestAuth.tenantId, TestAuth.userId)
+        val stateOk = query(again.authorizationUrl, "state")
+        Mockito.`when`(http.postForm(Mockito.anyString() ?: "", Mockito.any() ?: emptyMap())).thenReturn(
+            mapOf("access_token" to "Atza|token", "refresh_token" to "Atzr|refresh", "expires_in" to 3600),
+        )
+        val tokens = oauth.exchange("amazon", "CODE", stateOk, null, null, "A1AMZDEMO204918")
+        assertEquals("amazon", tokens.provider)
+        assertEquals("A1AMZDEMO204918", tokens.sellerExternalId)
+        assertEquals("Atza|token", tokens.accessToken)
+
+        val lease = oauth.ensureAccessToken("amazon", "old", "Atzr|refresh", Instant.now().minusSeconds(30), "A1AMZDEMO204918")
+        assertTrue(lease.rotated)
+        assertEquals("Atza|token", lease.accessToken)
     }
 
     @Test
