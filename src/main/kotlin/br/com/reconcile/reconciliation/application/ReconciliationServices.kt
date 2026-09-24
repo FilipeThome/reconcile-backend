@@ -3,9 +3,11 @@ package br.com.reconcile.reconciliation.application
 import br.com.reconcile.fiscal.infra.InvoiceRepository
 import br.com.reconcile.identity.infra.TenantRepository
 import br.com.reconcile.ledger.infra.FeeRepository
+import br.com.reconcile.ledger.infra.OrderEntity
 import br.com.reconcile.ledger.infra.OrderRepository
 import br.com.reconcile.ledger.infra.PaymentRepository
 import br.com.reconcile.ledger.infra.PayoutOrderRepository
+import br.com.reconcile.ledger.infra.PayoutRepository
 import br.com.reconcile.ledger.infra.RefundRepository
 import br.com.reconcile.ledger.infra.SettlementRepository
 import br.com.reconcile.reconciliation.domain.CalculationComponent
@@ -29,8 +31,10 @@ import br.com.reconcile.reconciliation.infra.CaseRepository
 import br.com.reconcile.reconciliation.infra.CaseTimelineEntity
 import br.com.reconcile.reconciliation.infra.CaseTimelineRepository
 import br.com.reconcile.reconciliation.infra.RuleRepository
+import br.com.reconcile.reconciliation.infra.SnapshotEntity
 import br.com.reconcile.reconciliation.infra.SnapshotRepository
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.domain.Money
@@ -38,7 +42,9 @@ import br.com.reconcile.shared.security.currentUser
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
+import java.time.ZoneOffset
 
 @Service
 class CaseService(
@@ -47,12 +53,22 @@ class CaseService(
     private val timeline: CaseTimelineRepository,
     private val snapshots: SnapshotRepository,
     private val orders: OrderRepository,
+    private val payments: PaymentRepository,
     private val audit: AuditService,
 ) {
-    fun list(status: String?): List<Map<String, Any?>> {
+    fun list(status: String?, filter: PeriodFilter): List<Map<String, Any?>> {
         val tenant = currentUser().tenantId
+        val orderMap = orders.findByTenantIdOrderByOrderedAtDesc(tenant).associateBy { it.externalId }
+        val paymentsByOrder = payments.findByTenantIdOrderByPaidAtDesc(tenant).groupBy { it.orderId }
         return cases.findByTenantIdOrderByOpenedAtDesc(tenant)
             .filter { status.isNullOrBlank() || status == "todas" || it.status == status }
+            .filter { item ->
+                val order = orderMap[item.orderExternalId]
+                val gateway = order?.let { paymentsByOrder[it.id]?.firstOrNull()?.gateway }
+                filter.matchesInstant(order?.orderedAt ?: item.openedAt) &&
+                    filter.matchesMarketplace(order?.marketplace) &&
+                    filter.matchesGateway(gateway)
+            }
             .map { caseSummary(it) }
     }
 
@@ -88,7 +104,9 @@ class CaseService(
     @Transactional
     fun updateStatus(externalId: String, status: String) {
         val item = requireCase(externalId)
-        val next = CaseStateMachine.transition(CaseStatus.valueOf(item.status), CaseStatus.valueOf(status))
+        val current = parseCaseStatus(item.status)
+        val requested = parseCaseStatus(status)
+        val next = CaseStateMachine.transition(current, requested)
         item.status = next.name
         cases.save(item)
         timeline.save(
@@ -114,6 +132,11 @@ class CaseService(
         audit.record(user.tenantId, user.displayName, "case.comment", "case", item.externalId)
     }
 
+    private fun parseCaseStatus(status: String) =
+        runCatching { CaseStatus.valueOf(status) }.getOrElse {
+            throw UnprocessableException("Status de caso inválido: $status")
+        }
+
     private fun requireCase(externalId: String): CaseEntity =
         cases.findByTenantIdAndExternalId(currentUser().tenantId, externalId)
             ?: throw NotFoundException("Caso $externalId não encontrado")
@@ -134,6 +157,9 @@ class CaseService(
         "status" to item.status,
         "priority" to item.priority,
         "owner" to item.ownerName,
+        "description" to item.description,
+        "suggestedAction" to item.suggestedAction,
+        "confidence" to item.confidence,
     )
 }
 
@@ -155,6 +181,37 @@ class RuleQueryService(private val rules: RuleRepository, private val audit: Aud
 }
 
 @Service
+class SnapshotQueryService(
+    private val snapshots: SnapshotRepository,
+    private val orders: OrderRepository,
+) {
+    fun list(): List<Map<String, Any?>> {
+        val tenant = currentUser().tenantId
+        val orderMap = orders.findByTenantIdOrderByOrderedAtDesc(tenant).associateBy { it.id }
+        return snapshots.findByTenantId(tenant).map { snapshotDto(it, orderMap[it.orderId]?.externalId) }
+    }
+
+    fun get(externalId: String): Map<String, Any?> {
+        val tenant = currentUser().tenantId
+        val item = snapshots.findByTenantIdAndExternalId(tenant, externalId)
+            ?: throw NotFoundException("Snapshot $externalId não encontrado")
+        val order = orders.findById(item.orderId).orElse(null)
+        return snapshotDto(item, order?.externalId)
+    }
+
+    private fun snapshotDto(item: SnapshotEntity, orderId: String?) = mapOf(
+        "id" to item.externalId,
+        "orderId" to (orderId ?: ""),
+        "version" to item.engineVersion,
+        "gross" to item.grossAmount,
+        "expected" to item.expectedAmount,
+        "actual" to item.actualAmount,
+        "difference" to item.differenceAmount,
+        "components" to item.components,
+    )
+}
+
+@Service
 class EngineService(
     private val tenants: TenantRepository,
     private val orders: OrderRepository,
@@ -167,6 +224,7 @@ class EngineService(
     private val cases: CaseRepository,
     private val rules: RuleRepository,
     private val timeline: CaseTimelineRepository,
+    private val snapshots: SnapshotRepository,
     private val audit: AuditService,
 ) {
     private val engine = SettlementCalculationEngine()
@@ -179,19 +237,48 @@ class EngineService(
         "r5" to UnreflectedRefundRule(),
     )
 
-    fun overview(): Map<String, Any> = mapOf(
-        "version" to "sce-v1.4",
-        "calculations" to orders.findByTenantIdOrderByOrderedAtDesc(currentUser().tenantId).size,
-        "layers" to MatchingLayer.entries.map { it.name },
-        "components" to listOf(
-            mapOf("label" to "Comissão marketplace", "amount" to 98420.30, "pct" to 50.6),
-            mapOf("label" to "Tarifa de pagamento", "amount" to 32110.80, "pct" to 16.5),
-            mapOf("label" to "Frete", "amount" to 28440.20, "pct" to 14.6),
-            mapOf("label" to "Retenção tributária", "amount" to 18220.00, "pct" to 9.4),
-            mapOf("label" to "Publicidade", "amount" to 11840.40, "pct" to 6.1),
-            mapOf("label" to "Ajustes e campanhas", "amount" to 5410.10, "pct" to 2.8),
-        ),
-    )
+    fun overview(): Map<String, Any?> {
+        val tenantId = currentUser().tenantId
+        val tenant = tenants.findById(tenantId).orElseThrow()
+        val snapshotRows = snapshots.findByTenantId(tenantId)
+        val feeRows = fees.findByTenantId(tenantId)
+        val grouped = feeRows.groupBy { it.feeType }.mapValues { (_, rows) ->
+            rows.fold(BigDecimal.ZERO) { acc, item -> acc + item.actualAmount }
+        }.entries.sortedByDescending { it.value }
+        val total = grouped.fold(BigDecimal.ZERO) { acc, item -> acc + item.value }
+        val example = snapshotRows.firstOrNull { it.externalId == "SNAP-001" } ?: snapshotRows.firstOrNull()
+        val exampleOrder = example?.let { orders.findById(it.orderId).orElse(null) }
+        return mapOf(
+            "version" to "sce-v1.4",
+            "calculations" to snapshotRows.size,
+            "layers" to MatchingLayer.entries.map { it.name },
+            "components" to grouped.map { (label, amount) ->
+                mapOf(
+                    "label" to label,
+                    "amount" to amount,
+                    "pct" to if (total.compareTo(BigDecimal.ZERO) == 0) 0.0
+                    else amount.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP).toDouble(),
+                )
+            },
+            "example" to example?.let {
+                mapOf(
+                    "id" to it.externalId,
+                    "orderId" to (exampleOrder?.externalId ?: ""),
+                    "version" to it.engineVersion,
+                    "gross" to it.grossAmount,
+                    "expected" to it.expectedAmount,
+                    "actual" to it.actualAmount,
+                    "difference" to it.differenceAmount,
+                    "components" to it.components,
+                )
+            },
+            "tolerances" to mapOf(
+                "cents" to tenant.amountTolerance,
+                "dateDays" to tenant.dateToleranceDays,
+                "settlementDeadlineDays" to tenant.settlementDeadlineDays,
+            ),
+        )
+    }
 
     @Transactional
     fun reprocess(orderExternalId: String): Map<String, Any?> {
@@ -293,37 +380,60 @@ class EngineService(
 class DashboardService(
     private val cases: CaseRepository,
     private val closings: br.com.reconcile.closing.infra.ClosingRepository,
+    private val orders: OrderRepository,
+    private val payments: PaymentRepository,
+    private val invoices: InvoiceRepository,
+    private val payouts: PayoutRepository,
 ) {
-    fun dashboard(): Map<String, Any> {
+    fun dashboard(rawFilter: PeriodFilter): Map<String, Any> {
         val tenant = currentUser().tenantId
         val closing = closings.findByTenantIdOrderByPeriodDesc(tenant).firstOrNull()
-        val openCases = cases.findByTenantIdOrderByOpenedAtDesc(tenant)
-            .filter { it.status == "aberta" || it.status == "em_analise" }
+        val filter = rawFilter.defaultToPeriod(closing?.period)
+        val allOrders = orders.findByTenantIdOrderByOrderedAtDesc(tenant)
+        val paymentsByOrder = payments.findByTenantIdOrderByPaidAtDesc(tenant).groupBy { it.orderId }
+        val invoicesByOrder = invoices.findByTenantId(tenant).associateBy { it.orderId }
+        val scoped = allOrders.filter { order -> matches(order, paymentsByOrder[order.id]?.firstOrNull()?.gateway, filter) }
+        val previous = allOrders.filter { order ->
+            matches(order, paymentsByOrder[order.id]?.firstOrNull()?.gateway, filter.previous())
+        }
+        val orderIds = scoped.map { it.externalId }.toSet()
+        val previousIds = previous.map { it.externalId }.toSet()
+        val allCases = cases.findByTenantIdOrderByOpenedAtDesc(tenant)
+        val scopedCases = allCases.filter { it.orderExternalId in orderIds }
+        val priorCases = allCases.filter { it.orderExternalId in previousIds }
+        val current = totals(scoped, scopedCases, invoicesByOrder)
+        val prior = totals(previous, priorCases, invoicesByOrder)
+        val openCases = scopedCases.filter { it.status == "aberta" || it.status == "em_analise" }
+        val upcoming = payouts.findByTenantIdOrderByPaidAtDesc(tenant)
+            .filter { it.status == "previsto" && filter.matchesGateway(it.gateway) }
+            .take(5)
         return mapOf(
             "kpis" to mapOf(
-                "gross" to (closing?.grossAmount ?: BigDecimal.ZERO),
-                "expected" to (closing?.expectedAmount ?: BigDecimal.ZERO),
-                "received" to (closing?.receivedAmount ?: BigDecimal.ZERO),
-                "divergence" to (closing?.openDiffAmount ?: BigDecimal.ZERO),
-                "pendingInvoices" to (closing?.pendingInvoices ?: 0),
-                "orders" to (closing?.ordersCount ?: 0),
+                "gross" to current.gross,
+                "expected" to current.expected,
+                "received" to current.received,
+                "divergence" to current.divergence,
+                "confirmedLoss" to current.loss,
+                "recoverable" to current.recoverable,
+                "pendingSettlement" to current.pendingSettlement,
+                "pendingInvoices" to current.pendingInvoices,
+                "orders" to scoped.size,
+                "avgTicket" to current.avgTicket,
+                "itemsSold" to current.items,
+                "reconciledPct" to current.reconciledPct,
+                "divergentPct" to current.divergentPct,
+                "pendingPct" to current.pendingPct,
+                "vsGross" to delta(current.gross, prior.gross),
+                "vsExpected" to delta(current.expected, prior.expected),
+                "vsReceived" to delta(current.received, prior.received),
+                "vsDivergence" to delta(current.divergence, prior.divergence),
+                "vsLoss" to delta(current.loss, prior.loss),
             ),
-            "dailySeries" to listOf(
-                mapOf("day" to "01", "esperado" to 31200, "recebido" to 30110, "divergencia" to 1090),
-                mapOf("day" to "13", "esperado" to 40240, "recebido" to 38110, "divergencia" to 2130),
-                mapOf("day" to "21", "esperado" to 42180, "recebido" to 39850, "divergencia" to 2330),
-                mapOf("day" to "31", "esperado" to 35680, "recebido" to 35100, "divergencia" to 580),
-            ),
-            "causes" to listOf(
-                mapOf("cause" to "Tarifa não identificada", "value" to 9840, "pct" to 39.6),
-                mapOf("cause" to "Repasse não realizado", "value" to 6410, "pct" to 25.8),
-                mapOf("cause" to "Estorno / chargeback", "value" to 3720, "pct" to 15.0),
-                mapOf("cause" to "Nota ausente ou atrasada", "value" to 2880, "pct" to 11.6),
-                mapOf("cause" to "Valor faturado divergente", "value" to 1990, "pct" to 8.0),
-            ),
-            "periodLabel" to (closing?.label ?: "Período atual"),
-            "recoverable" to cases.findByTenantIdOrderByOpenedAtDesc(tenant).sumOf { it.recoverableAmount },
-            "confirmedLoss" to cases.findByTenantIdOrderByOpenedAtDesc(tenant).sumOf { it.confirmedLossAmount },
+            "dailySeries" to dailySeries(scoped),
+            "causes" to causeBreakdown(scopedCases),
+            "periodLabel" to filter.label(),
+            "recoverable" to current.recoverable,
+            "confirmedLoss" to current.loss,
             "actionQueue" to openCases.take(8).map {
                 mapOf(
                     "id" to it.externalId,
@@ -334,6 +444,115 @@ class DashboardService(
                     "priority" to it.priority,
                 )
             },
+            "upcomingPayouts" to upcoming.map {
+                mapOf(
+                    "id" to it.externalId,
+                    "netAmount" to it.netAmount,
+                    "status" to it.status,
+                    "date" to it.paidAt.toString(),
+                    "gateway" to it.gateway,
+                )
+            },
         )
     }
+
+    private fun matches(order: OrderEntity, gateway: String?, filter: PeriodFilter) =
+        filter.matchesInstant(order.orderedAt) &&
+            filter.matchesMarketplace(order.marketplace) &&
+            filter.matchesGateway(gateway)
+
+    private fun totals(
+        scoped: List<OrderEntity>,
+        scopedCases: List<CaseEntity>,
+        invoicesByOrder: Map<java.util.UUID, br.com.reconcile.fiscal.infra.InvoiceEntity>,
+    ): DashTotals {
+        val gross = scoped.fold(BigDecimal.ZERO) { acc, item -> acc + item.grossAmount }
+        val expected = scoped.fold(BigDecimal.ZERO) { acc, item -> acc + item.expectedNet }
+        val received = scoped.fold(BigDecimal.ZERO) { acc, item -> acc + (item.actualNet ?: BigDecimal.ZERO) }
+        val pendingSettlement = scoped
+            .filter { it.reconciliationStatus == "pendente_liquidacao" || it.actualNet == null }
+            .fold(BigDecimal.ZERO) { acc, item -> acc + item.expectedNet }
+        val count = scoped.size.coerceAtLeast(1)
+        val reconciled = scoped.count { it.reconciliationStatus.startsWith("reconciliado") }
+        val divergent = scoped.count { it.reconciliationStatus == "divergente" || it.reconciliationStatus == "revisao_manual" }
+        val pending = scoped.size - reconciled - divergent
+        return DashTotals(
+            gross = gross,
+            expected = expected,
+            received = received,
+            divergence = expected - received,
+            loss = scopedCases.fold(BigDecimal.ZERO) { acc, item -> acc + item.confirmedLossAmount },
+            recoverable = scopedCases.fold(BigDecimal.ZERO) { acc, item -> acc + item.recoverableAmount },
+            pendingSettlement = pendingSettlement,
+            pendingInvoices = scoped.count { invoicesByOrder[it.id] == null },
+            avgTicket = if (scoped.isEmpty()) BigDecimal.ZERO else gross.divide(BigDecimal(scoped.size), 2, RoundingMode.HALF_UP),
+            items = scoped.sumOf { it.items },
+            reconciledPct = pct(reconciled, count),
+            divergentPct = pct(divergent, count),
+            pendingPct = pct(pending.coerceAtLeast(0), count),
+        )
+    }
+
+    private fun dailySeries(scoped: List<OrderEntity>): List<Map<String, Any>> =
+        scoped.groupBy { it.orderedAt.atZone(ZoneOffset.UTC).toLocalDate() }
+            .toSortedMap()
+            .map { (day, rows) ->
+                val expected = rows.fold(BigDecimal.ZERO) { acc, item -> acc + item.expectedNet }
+                val received = rows.fold(BigDecimal.ZERO) { acc, item -> acc + (item.actualNet ?: BigDecimal.ZERO) }
+                mapOf(
+                    "day" to day.dayOfMonth.toString().padStart(2, '0'),
+                    "esperado" to expected,
+                    "recebido" to received,
+                    "divergencia" to expected - received,
+                )
+            }
+
+    private fun causeBreakdown(scopedCases: List<CaseEntity>): List<Map<String, Any>> {
+        val grouped = scopedCases.groupBy { causeLabel(it.cause) }
+            .mapValues { (_, rows) -> rows.fold(BigDecimal.ZERO) { acc, item -> acc + item.amount } }
+            .entries
+            .sortedByDescending { it.value }
+        val total = grouped.fold(BigDecimal.ZERO) { acc, item -> acc + item.value }
+        return grouped.map { (cause, value) ->
+            mapOf(
+                "cause" to cause,
+                "value" to value,
+                "pct" to if (total.compareTo(BigDecimal.ZERO) == 0) 0.0 else
+                    value.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP).toDouble(),
+            )
+        }
+    }
+
+    private fun causeLabel(cause: String) = when (cause) {
+        "repasse_nao_realizado" -> "Repasse não realizado"
+        "tarifa_inesperada" -> "Tarifa inesperada"
+        "nota_ausente" -> "Nota ausente ou atrasada"
+        "valor_faturado_divergente" -> "Valor faturado divergente"
+        "estorno_parcial", "chargeback_sem_reflexo" -> "Estorno / chargeback"
+        "duplicidade" -> "Duplicidade"
+        else -> cause
+    }
+
+    private fun pct(part: Int, total: Int) =
+        if (total == 0) 0.0 else BigDecimal(part * 100.0 / total).setScale(1, RoundingMode.HALF_UP).toDouble()
+
+    private fun delta(current: BigDecimal, previous: BigDecimal) =
+        if (previous.compareTo(BigDecimal.ZERO) == 0) 0.0
+        else current.subtract(previous).multiply(BigDecimal(100)).divide(previous, 1, RoundingMode.HALF_UP).toDouble()
+
+    private data class DashTotals(
+        val gross: BigDecimal,
+        val expected: BigDecimal,
+        val received: BigDecimal,
+        val divergence: BigDecimal,
+        val loss: BigDecimal,
+        val recoverable: BigDecimal,
+        val pendingSettlement: BigDecimal,
+        val pendingInvoices: Int,
+        val avgTicket: BigDecimal,
+        val items: Int,
+        val reconciledPct: Double,
+        val divergentPct: Double,
+        val pendingPct: Double,
+    )
 }

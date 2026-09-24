@@ -9,6 +9,8 @@ import br.com.reconcile.closing.infra.ClosingEntity
 import br.com.reconcile.closing.infra.ClosingRepository
 import br.com.reconcile.closing.infra.ExportEntity
 import br.com.reconcile.closing.infra.ExportRepository
+import br.com.reconcile.ledger.infra.OrderRepository
+import br.com.reconcile.reconciliation.infra.CaseRepository
 import br.com.reconcile.shared.api.NotFoundException
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
@@ -16,12 +18,17 @@ import br.com.reconcile.shared.security.currentUser
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneOffset
 
 @Service
 class ClosingService(
     private val closings: ClosingRepository,
     private val deltas: ClosingDeltaRepository,
+    private val orders: OrderRepository,
+    private val cases: CaseRepository,
     private val audit: AuditService,
 ) {
     fun list() = closings.findByTenantIdOrderByPeriodDesc(currentUser().tenantId).map { toDto(it) }
@@ -32,6 +39,7 @@ class ClosingService(
             "deltas" to deltas.findByClosingId(item.id).map {
                 mapOf("reason" to it.reason, "amount" to it.amount, "createdAt" to it.createdAt.toString())
             },
+            "causes" to causesFor(item.period),
         )
     }
 
@@ -67,6 +75,45 @@ class ClosingService(
                 createdAt = delta.createdAt,
             ),
         )
+    }
+
+    private fun causesFor(period: String): List<Map<String, Any>> {
+        val month = runCatching { YearMonth.parse(period) }.getOrNull() ?: return emptyList()
+        val tenant = currentUser().tenantId
+        val from = month.atDay(1)
+        val to = month.atEndOfMonth()
+        val orderIds = orders.findByTenantIdOrderByOrderedAtDesc(tenant)
+            .filter {
+                val day = it.orderedAt.atZone(ZoneOffset.UTC).toLocalDate()
+                !day.isBefore(from) && !day.isAfter(to)
+            }
+            .map { it.externalId }
+            .toSet()
+        val grouped = cases.findByTenantIdOrderByOpenedAtDesc(tenant)
+            .filter { it.orderExternalId in orderIds }
+            .groupBy { causeLabel(it.cause) }
+            .mapValues { (_, rows) -> rows.fold(BigDecimal.ZERO) { acc, item -> acc + item.amount } }
+            .entries
+            .sortedByDescending { it.value }
+        val total = grouped.fold(BigDecimal.ZERO) { acc, item -> acc + item.value }
+        return grouped.map { (cause, value) ->
+            mapOf(
+                "cause" to cause,
+                "value" to value,
+                "pct" to if (total.compareTo(BigDecimal.ZERO) == 0) 0.0
+                else value.multiply(BigDecimal(100)).divide(total, 1, RoundingMode.HALF_UP).toDouble(),
+            )
+        }
+    }
+
+    private fun causeLabel(cause: String) = when (cause) {
+        "repasse_nao_realizado" -> "Repasse não realizado"
+        "tarifa_inesperada" -> "Tarifa inesperada"
+        "nota_ausente" -> "Nota ausente ou atrasada"
+        "valor_faturado_divergente" -> "Valor faturado divergente"
+        "estorno_parcial", "chargeback_sem_reflexo" -> "Estorno / chargeback"
+        "duplicidade" -> "Duplicidade"
+        else -> cause
     }
 
     private fun requireClosing(externalId: String) =

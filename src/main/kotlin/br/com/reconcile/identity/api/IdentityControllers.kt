@@ -5,6 +5,7 @@ import br.com.reconcile.identity.application.LoginResponse
 import br.com.reconcile.identity.infra.SellerAccountRepository
 import br.com.reconcile.identity.infra.TenantRepository
 import br.com.reconcile.identity.infra.UserRepository
+import br.com.reconcile.shared.security.ClientIpResolver
 import br.com.reconcile.shared.security.LoginRateLimiter
 import br.com.reconcile.shared.security.currentUser
 import jakarta.servlet.http.HttpServletRequest
@@ -13,6 +14,7 @@ import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -29,21 +31,19 @@ data class LoginRequest(
 class AuthController(
     private val authService: AuthService,
     private val loginRateLimiter: LoginRateLimiter,
+    private val clientIp: ClientIpResolver,
 ) {
     @PostMapping("/login")
     fun login(@Valid @RequestBody request: LoginRequest, http: HttpServletRequest): LoginResponse {
-        loginRateLimiter.check(clientKey(http))
-        return authService.login(request.email, request.password)
+        val key = clientIp.clientKey(http)
+        loginRateLimiter.assertAllowed(key)
+        return try {
+            authService.login(request.email, request.password)
+        } catch (ex: BadCredentialsException) {
+            loginRateLimiter.recordFailure(key)
+            throw ex
+        }
     }
-
-    private fun clientKey(request: HttpServletRequest): String {
-        val forwarded = request.getHeader("X-Real-IP")?.trim().orEmpty()
-        val remote = request.remoteAddr.orEmpty()
-        return if (forwarded.isNotEmpty() && isTrustedProxy(remote)) forwarded else remote.ifBlank { "unknown" }
-    }
-
-    private fun isTrustedProxy(ip: String) =
-        ip == "127.0.0.1" || ip == "https://example.net/id/garnet" || ip.startsWith("10.") || ip.startsWith("172.") || ip.startsWith("192.168.")
 }
 
 @RestController
@@ -62,9 +62,22 @@ class SettingsController(
             "tenant" to mapOf(
                 "id" to tenant.externalId,
                 "name" to tenant.name,
-                "sellerId" to (sellers.findByTenantId(tenant.id).firstOrNull()?.sellerExternalId ?: ""),
+                "sellerId" to (
+                    sellers.findByTenantIdAndMarketplace(tenant.id, "Mercado Livre")?.sellerExternalId
+                        ?: sellers.findByTenantId(tenant.id).firstOrNull()?.sellerExternalId
+                        ?: ""
+                    ),
             ),
-            "users" to users.findByTenantId(tenant.id).map { mapOf("name" to it.name, "email" to it.email, "role" to it.role) },
+            "currentUser" to mapOf(
+                "name" to auth.displayName,
+                "email" to auth.email,
+                "role" to auth.role,
+            ),
+            "users" to if (auth.role.equals("admin", ignoreCase = true)) {
+                users.findByTenantId(tenant.id).map { mapOf("name" to it.name, "email" to it.email, "role" to it.role) }
+            } else {
+                listOf(mapOf("name" to auth.displayName, "email" to auth.email, "role" to auth.role))
+            },
             "tolerances" to mapOf(
                 "cents" to tenant.amountTolerance,
                 "dateDays" to tenant.dateToleranceDays,

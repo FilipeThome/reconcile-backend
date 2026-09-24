@@ -22,6 +22,10 @@ class ConnectionEntity(
     var status: String = "disponivel",
     var detail: String? = null,
     @Column(name = "last_sync_at") var lastSyncAt: Instant? = null,
+    @Column(name = "access_token") var accessToken: String? = null,
+    @Column(name = "refresh_token") var refreshToken: String? = null,
+    @Column(name = "token_expires_at") var tokenExpiresAt: Instant? = null,
+    @Column(name = "seller_external_id") var sellerExternalId: String? = null,
     @Version var version: Long = 0,
 )
 
