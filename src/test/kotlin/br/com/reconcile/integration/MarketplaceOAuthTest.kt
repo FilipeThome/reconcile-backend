@@ -122,7 +122,6 @@ class MarketplaceOAuthTest {
                 "expire_in" to 14400,
                 "error" to "",
                 "shop_id_list" to listOf(88001),
-                "merchant_id_list" to listOf(77),
             ),
         )
         val tokens = oauth.exchange("shopee", "CODE", state, 44120, null)
@@ -132,7 +131,7 @@ class MarketplaceOAuthTest {
         val startMain = oauth.authorizationUrl("shopee", TestAuth.tenantId, TestAuth.userId)
         val stateMain = query(startMain.authorizationUrl, "state")
         val main = oauth.exchange("shopee", "CODE2", stateMain, null, 99)
-        assertEquals("m:77:88001", main.sellerExternalId)
+        assertEquals("88001", main.sellerExternalId)
 
         val startFail = oauth.authorizationUrl("shopee", TestAuth.tenantId, TestAuth.userId)
         val stateFail = query(startFail.authorizationUrl, "state")
