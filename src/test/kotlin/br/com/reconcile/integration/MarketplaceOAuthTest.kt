@@ -134,7 +134,14 @@ class MarketplaceOAuthTest {
         val start = oauth.authorizationUrl("shopee", TestAuth.tenantId, TestAuth.userId)
         val state = query(start.authorizationUrl, "state")
         Mockito.`when`(http.postJson(Mockito.anyString() ?: "", Mockito.any() ?: emptyMap())).thenReturn(
-            mapOf("access_token" to "shp-token", "refresh_token" to "shp-refresh", "expire_in" to 14400, "error" to ""),
+            mapOf(
+                "access_token" to "shp-token",
+                "refresh_token" to "shp-refresh",
+                "expire_in" to 14400,
+                "error" to "",
+                "shop_id_list" to listOf(88001),
+                "merchant_id_list" to listOf(77),
+            ),
         )
         val tokens = oauth.exchange("shopee", "CODE", state, 44120, null)
         assertEquals("shopee", tokens.provider)
@@ -143,7 +150,7 @@ class MarketplaceOAuthTest {
         val startMain = oauth.authorizationUrl("shopee", TestAuth.tenantId, TestAuth.userId)
         val stateMain = query(startMain.authorizationUrl, "state")
         val main = oauth.exchange("shopee", "CODE2", stateMain, null, 99)
-        assertEquals("main:99", main.sellerExternalId)
+        assertEquals("m:77:88001", main.sellerExternalId)
 
         val startFail = oauth.authorizationUrl("shopee", TestAuth.tenantId, TestAuth.userId)
         val stateFail = query(startFail.authorizationUrl, "state")
