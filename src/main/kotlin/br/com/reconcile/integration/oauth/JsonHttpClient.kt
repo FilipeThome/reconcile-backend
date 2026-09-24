@@ -13,6 +13,7 @@ interface JsonHttpClient {
     fun getJson(url: String, bearer: String): Map<String, Any?>
     fun getJsonOrEmpty(url: String, bearer: String): Map<String, Any?>
     fun getAmazonJson(url: String, headers: Map<String, String>): Map<String, Any?>
+    fun getAmazonJsonOrEmpty(url: String, headers: Map<String, String>): Map<String, Any?>
 }
 
 @Component
@@ -63,6 +64,13 @@ class RestJsonHttpClient(builder: RestClient.Builder) : JsonHttpClient {
         headers.forEach { (name, value) -> request.header(name, value) }
         return request.retrieve().body(mapType) ?: emptyMap()
     }
+
+    override fun getAmazonJsonOrEmpty(url: String, headers: Map<String, String>): Map<String, Any?> =
+        try {
+            getAmazonJson(url, headers)
+        } catch (_: RestClientResponseException) {
+            emptyMap()
+        }
 
     override fun getJsonOrEmpty(url: String, bearer: String): Map<String, Any?> =
         try {

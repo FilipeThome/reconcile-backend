@@ -136,7 +136,26 @@ class MarketplaceSaleMapperTest {
                 "OrderTotal" to mapOf("CurrencyCode" to "BRL", "Amount" to "259.90"),
                 "BuyerInfo" to mapOf("BuyerName" to "Laura Bennett"),
             ),
-            listOf(mapOf("QuantityOrdered" to 1, "ReferralFee" to "38.99")),
+            listOf(
+                mapOf(
+                    "QuantityOrdered" to 1,
+                    "ItemPrice" to mapOf("Amount" to "249.90"),
+                    "ShippingPrice" to mapOf("Amount" to "10.00"),
+                ),
+            ),
+            mapOf(
+                "ShipmentEventList" to listOf(
+                    mapOf(
+                        "ShipmentItemList" to listOf(
+                            mapOf(
+                                "ItemFeeList" to listOf(
+                                    mapOf("FeeType" to "Commission", "FeeAmount" to mapOf("CurrencyAmount" to "-38.99")),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
         )!!
         assertEquals("Amazon", sale.order.marketplace)
         assertEquals("Laura Bennett", sale.order.buyerName)
@@ -144,6 +163,20 @@ class MarketplaceSaleMapperTest {
         assertEquals("Cartão", sale.payments.single().method)
         assertEquals("Amazon", sale.payments.single().gateway)
         assertEquals(BigDecimal("220.91"), sale.order.expectedNet)
+        assertEquals(BigDecimal("220.91"), sale.order.actualNet)
         assertTrue(sale.fees.any { it.type == "Comissão marketplace" })
+        assertTrue(sale.fees.none { it.type == "Frete" })
+
+        val unsettled = amazon.toSale(
+            mapOf(
+                "AmazonOrderId" to "702-0000001-0000002",
+                "OrderStatus" to "Shipped",
+                "OrderTotal" to mapOf("Amount" to "100.00"),
+            ),
+            listOf(mapOf("QuantityOrdered" to 1, "ShippingPrice" to mapOf("Amount" to "15.00"))),
+        )!!
+        assertEquals(BigDecimal("100.00"), unsettled.order.expectedNet)
+        assertNull(unsettled.order.actualNet)
+        assertTrue(unsettled.fees.isEmpty())
     }
 }

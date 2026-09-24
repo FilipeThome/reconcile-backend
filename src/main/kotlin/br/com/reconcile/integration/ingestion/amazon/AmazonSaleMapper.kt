@@ -8,21 +8,25 @@ import br.com.reconcile.integration.ingestion.CanonicalSale
 import br.com.reconcile.integration.ingestion.CatalogJson
 import br.com.reconcile.shared.domain.Money
 import org.springframework.stereotype.Component
+import java.math.BigDecimal
 import java.time.Instant
 
 @Component
 class AmazonSaleMapper {
-    fun toSale(order: Map<String, Any?>, items: List<Map<String, Any?>> = emptyList()): CanonicalSale? {
+    fun toSale(
+        order: Map<String, Any?>,
+        items: List<Map<String, Any?>> = emptyList(),
+        financialEvents: Map<String, Any?> = emptyMap(),
+    ): CanonicalSale? {
         val id = CatalogJson.text(order, "AmazonOrderId") ?: return null
         val orderedAt = CatalogJson.instant(order, "PurchaseDate") ?: Instant.now()
         val lines = items.ifEmpty { CatalogJson.maps(order["OrderItems"]) }
         val gross = money(order["OrderTotal"]).takeIf { it > Money.ZERO }
             ?: lines.fold(Money.ZERO) { acc, item -> acc + money(item["ItemPrice"]) }
-        val commission = lines.fold(Money.ZERO) { acc, item ->
-            acc + CatalogJson.decimal(item, "ReferralFee") + CatalogJson.decimal(item, "Commission")
-        }
-        val shipping = lines.fold(Money.ZERO) { acc, item -> acc + money(item["ShippingPrice"]) }
-        val expectedNet = Money.scale(gross - commission - shipping)
+        val postedFees = marketplaceFees(financialEvents)
+        val settled = CatalogJson.maps(financialEvents["ShipmentEventList"]).isNotEmpty()
+        val commission = postedFees.fold(Money.ZERO) { acc, fee -> acc + fee.second }
+        val expectedNet = Money.scale(gross - commission)
         val status = orderStatus(CatalogJson.text(order, "OrderStatus"))
         val paidAt = CatalogJson.instant(order, "LastUpdateDate") ?: orderedAt
         val itemCount = lines.sumOf { CatalogJson.intValue(it, "QuantityOrdered", 1).coerceAtLeast(0) }
@@ -37,7 +41,7 @@ class AmazonSaleMapper {
                 items = itemCount.coerceAtLeast(1),
                 grossAmount = gross,
                 expectedNet = expectedNet,
-                actualNet = if (status == "pago") expectedNet else null,
+                actualNet = if (settled && status == "pago") expectedNet else null,
                 status = status,
             ),
             payments = listOf(
@@ -47,12 +51,12 @@ class AmazonSaleMapper {
                     gateway = "Amazon",
                     method = paymentMethod(CatalogJson.text(order, "PaymentMethod")),
                     grossAmount = gross,
-                    fees = Money.scale(commission + shipping),
+                    fees = commission,
                     netAmount = expectedNet,
                     status = if (status == "cancelado") "estornado" else "aprovado",
                 ),
             ),
-            fees = fees(id, paidAt, commission, shipping),
+            fees = fees(id, paidAt, postedFees),
             refunds = if (status == "cancelado") {
                 listOf(
                     CanonicalRefund(
@@ -70,15 +74,34 @@ class AmazonSaleMapper {
         )
     }
 
-    private fun fees(id: String, at: Instant, commission: java.math.BigDecimal, shipping: java.math.BigDecimal) =
-        buildList {
-            if (commission > Money.ZERO) {
-                add(CanonicalFee(CatalogJson.clipped("$id:referral"), "Comissão marketplace", commission, commission, "Amazon", at))
-            }
-            if (shipping > Money.ZERO) {
-                add(CanonicalFee(CatalogJson.clipped("$id:shipping"), "Frete", shipping, shipping, "Amazon", at))
+    private fun marketplaceFees(events: Map<String, Any?>): List<Pair<String, BigDecimal>> =
+        CatalogJson.maps(events["ShipmentEventList"]).flatMap { shipment ->
+            CatalogJson.maps(shipment["ShipmentItemList"]).flatMap { item ->
+                CatalogJson.maps(item["ItemFeeList"]).mapNotNull { fee ->
+                    val amount = money(fee["FeeAmount"]).abs()
+                    if (amount <= Money.ZERO) return@mapNotNull null
+                    val type = CatalogJson.text(fee, "FeeType") ?: "Fee"
+                    type to amount
+                }
             }
         }
+
+    private fun fees(id: String, at: Instant, posted: List<Pair<String, BigDecimal>>) =
+        posted.mapIndexed { index, (type, amount) ->
+            CanonicalFee(
+                externalId = CatalogJson.clipped("$id:$type:$index"),
+                type = feeLabel(type),
+                expected = amount,
+                actual = amount,
+                source = "Amazon",
+                occurredAt = at,
+            )
+        }
+
+    private fun feeLabel(type: String) = when (type) {
+        "Commission", "ReferralFee" -> "Comissão marketplace"
+        else -> type
+    }
 
     private fun buyerName(order: Map<String, Any?>): String {
         val buyer = CatalogJson.child(order, "BuyerInfo")
@@ -88,10 +111,12 @@ class AmazonSaleMapper {
             ?: "Comprador Amazon"
     }
 
-    private fun money(node: Any?): java.math.BigDecimal {
+    private fun money(node: Any?): BigDecimal {
         val map = node as? Map<*, *> ?: return Money.ZERO
         @Suppress("UNCHECKED_CAST")
-        return CatalogJson.decimal(map as Map<String, Any?>, "Amount")
+        val typed = map as Map<String, Any?>
+        val key = if (typed.containsKey("Amount")) "Amount" else "CurrencyAmount"
+        return CatalogJson.decimal(typed, key)
     }
 
     private fun orderStatus(raw: String?) = when (raw?.uppercase()) {
