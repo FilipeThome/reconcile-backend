@@ -32,6 +32,7 @@ data class TokenLease(
     val refreshToken: String?,
     val expiresAt: Instant?,
     val rotated: Boolean,
+    val sellerExternalId: String? = null,
 )
 
 @Service
@@ -261,15 +262,9 @@ class MarketplaceOAuthService(
             "partner_id" to config.clientId.toLongOrNull(),
         )
         val raw = shopId?.trim().orEmpty()
-        if (raw.startsWith("m:")) {
-            val merchant = raw.removePrefix("m:").substringBefore(':').toLongOrNull()
-                ?: throw UnprocessableException("Merchant da Shopee ausente. Reconecte a integração.")
-            body["merchant_id"] = merchant
-        } else {
-            val shop = raw.toLongOrNull()
-                ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
-            body["shop_id"] = shop
-        }
+        val shop = (if (raw.startsWith("m:")) raw.substringAfterLast(':') else raw).toLongOrNull()
+            ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+        body["shop_id"] = shop
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
         val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "Shopee")
@@ -278,6 +273,7 @@ class MarketplaceOAuthService(
             refreshToken = stringValue(token, "refresh_token") ?: refreshToken,
             expiresAt = expiresAt(token["expire_in"] ?: token["expires_in"]),
             rotated = true,
+            sellerExternalId = shop.toString(),
         )
     }
 
