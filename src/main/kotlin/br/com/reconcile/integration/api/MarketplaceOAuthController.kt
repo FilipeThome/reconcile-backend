@@ -25,12 +25,15 @@ class MarketplaceOAuthController(
         @RequestParam(name = "main_account_id", required = false) mainAccountId: Long?,
         @RequestParam(required = false) error: String?,
         @RequestParam(name = "error_description", required = false) errorDescription: String?,
+        @RequestParam(name = "selling_partner_id", required = false) sellingPartnerId: String? = null,
+        @RequestParam(name = "spapi_oauth_code", required = false) spapiOauthCode: String? = null,
     ): RedirectView {
         if (!error.isNullOrBlank() || !errorDescription.isNullOrBlank()) {
             return RedirectView(oauth.frontendRedirect(error = error ?: "exchange_failed"))
         }
         return try {
-            val tokens = oauth.exchange(provider, code, state, shopId, mainAccountId)
+            val authorizationCode = authorizationCode(provider, code, spapiOauthCode)
+            val tokens = oauth.exchange(provider, authorizationCode, state, shopId, mainAccountId, sellingPartnerId)
             integrations.activateFromOAuth(tokens)
             RedirectView(oauth.frontendRedirect(connected = tokens.provider))
         } catch (ex: UnprocessableException) {
@@ -39,4 +42,11 @@ class MarketplaceOAuthController(
             RedirectView(oauth.frontendRedirect(error = "exchange_failed"))
         }
     }
+
+    private fun authorizationCode(provider: String, code: String?, spapiOauthCode: String?): String? =
+        if (provider.equals("amazon", ignoreCase = true)) {
+            spapiOauthCode?.takeIf { it.isNotBlank() } ?: code
+        } else {
+            code
+        }
 }
