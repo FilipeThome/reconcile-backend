@@ -1,5 +1,6 @@
 package br.com.reconcile.integration.ingestion
 
+import br.com.reconcile.integration.ingestion.amazon.AmazonSaleMapper
 import br.com.reconcile.integration.ingestion.ml.MercadoLivreSaleMapper
 import br.com.reconcile.integration.ingestion.shopee.ShopeeSaleMapper
 import org.junit.jupiter.api.Test
@@ -11,6 +12,7 @@ import kotlin.test.assertTrue
 class MarketplaceSaleMapperTest {
     private val ml = MercadoLivreSaleMapper()
     private val shopee = ShopeeSaleMapper()
+    private val amazon = AmazonSaleMapper()
 
     @Test
     fun `maps mercado livre order payments fees refunds and nfe`() {
@@ -106,5 +108,28 @@ class MarketplaceSaleMapperTest {
     fun `ignores orders without marketplace identity`() {
         assertNull(ml.toSale(mapOf("status" to "paid")))
         assertNull(shopee.toSale(mapOf("order_status" to "UNPAID")))
+        assertNull(amazon.toSale(mapOf("OrderStatus" to "Shipped")))
+    }
+
+    @Test
+    fun `maps amazon order total referral fee and buyer`() {
+        val sale = amazon.toSale(
+            mapOf(
+                "AmazonOrderId" to "702-0000001-0000001",
+                "PurchaseDate" to "2026-05-06T15:10:00Z",
+                "OrderStatus" to "Shipped",
+                "PaymentMethod" to "CreditCard",
+                "OrderTotal" to mapOf("CurrencyCode" to "BRL", "Amount" to "259.90"),
+                "BuyerInfo" to mapOf("BuyerName" to "Laura Bennett"),
+            ),
+            listOf(mapOf("QuantityOrdered" to 1, "ReferralFee" to "38.99")),
+        )!!
+        assertEquals("Amazon", sale.order.marketplace)
+        assertEquals("Laura Bennett", sale.order.buyerName)
+        assertEquals("pago", sale.order.status)
+        assertEquals("Cartão", sale.payments.single().method)
+        assertEquals("Amazon", sale.payments.single().gateway)
+        assertEquals(BigDecimal("220.91"), sale.order.expectedNet)
+        assertTrue(sale.fees.any { it.type == "Comissão marketplace" })
     }
 }

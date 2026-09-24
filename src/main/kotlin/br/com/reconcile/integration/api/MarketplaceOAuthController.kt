@@ -25,12 +25,13 @@ class MarketplaceOAuthController(
         @RequestParam(name = "main_account_id", required = false) mainAccountId: Long?,
         @RequestParam(required = false) error: String?,
         @RequestParam(name = "error_description", required = false) errorDescription: String?,
+        @RequestParam(name = "selling_partner_id", required = false) sellingPartnerId: String? = null,
     ): RedirectView {
         if (!error.isNullOrBlank() || !errorDescription.isNullOrBlank()) {
             return RedirectView(oauth.frontendRedirect(error = error ?: "exchange_failed"))
         }
         return try {
-            val tokens = oauth.exchange(provider, code, state, shopId, mainAccountId)
+            val tokens = oauth.exchange(provider, code, state, shopId, mainAccountId, sellingPartnerId)
             integrations.activateFromOAuth(tokens)
             RedirectView(oauth.frontendRedirect(connected = tokens.provider))
         } catch (ex: UnprocessableException) {

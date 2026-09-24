@@ -12,6 +12,7 @@ interface JsonHttpClient {
     fun postJson(url: String, body: Map<String, Any?>): Map<String, Any?>
     fun getJson(url: String, bearer: String): Map<String, Any?>
     fun getJsonOrEmpty(url: String, bearer: String): Map<String, Any?>
+    fun getAmazonJson(url: String, headers: Map<String, String>): Map<String, Any?>
 }
 
 @Component
@@ -53,6 +54,15 @@ class RestJsonHttpClient(builder: RestClient.Builder) : JsonHttpClient {
             .retrieve()
             .body(mapType)
             ?: emptyMap()
+
+    override fun getAmazonJson(url: String, headers: Map<String, String>): Map<String, Any?> {
+        val request = client.get()
+            .uri(url)
+            .header("User-Agent", "Reconcile/1.0")
+            .accept(MediaType.APPLICATION_JSON)
+        headers.forEach { (name, value) -> request.header(name, value) }
+        return request.retrieve().body(mapType) ?: emptyMap()
+    }
 
     override fun getJsonOrEmpty(url: String, bearer: String): Map<String, Any?> =
         try {
