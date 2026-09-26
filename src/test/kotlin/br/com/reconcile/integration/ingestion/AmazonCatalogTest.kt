@@ -3,6 +3,7 @@ package br.com.reconcile.integration.ingestion
 import br.com.reconcile.integration.ingestion.amazon.AmazonCatalog
 import br.com.reconcile.integration.ingestion.amazon.AmazonRequestSigner
 import br.com.reconcile.integration.ingestion.amazon.AmazonSaleMapper
+import br.com.reconcile.integration.oauth.HttpJson
 import br.com.reconcile.integration.oauth.JsonHttpClient
 import br.com.reconcile.integration.oauth.MarketplaceOAuthProperties
 import br.com.reconcile.shared.api.UnprocessableException
@@ -42,6 +43,14 @@ class AmazonCatalogTest {
                 )
             }
         }
+
+        override fun requestJson(
+            method: String,
+            url: String,
+            bearer: String,
+            body: Any?,
+            headers: Map<String, String>,
+        ) = HttpJson(200, emptyMap<String, Any?>(), emptyMap())
 
         override fun getAmazonJsonOrEmpty(url: String, headers: Map<String, String>): Map<String, Any?> {
             calls += url to headers
