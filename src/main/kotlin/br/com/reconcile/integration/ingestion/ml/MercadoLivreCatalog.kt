@@ -8,6 +8,7 @@ import br.com.reconcile.integration.ingestion.MarketplaceCatalog
 import br.com.reconcile.integration.oauth.JsonHttpClient
 import br.com.reconcile.integration.oauth.MarketplaceOAuthProperties
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
 import java.time.format.DateTimeFormatter
@@ -23,7 +24,7 @@ class MercadoLivreCatalog(
 
     override fun pull(credentials: CatalogCredentials, window: IngestionWindow): CatalogSnapshot {
         val seller = credentials.sellerExternalId.ifBlank {
-            throw UnprocessableException("Seller do Mercado Livre ausente. Reconecte a integração.")
+            throw UnprocessableException(apiMessage("ml.seller"))
         }
         val base = properties.mercadoLivre.apiUrl.trimEnd('/')
         val sales = mutableListOf<br.com.reconcile.integration.ingestion.CanonicalSale>()

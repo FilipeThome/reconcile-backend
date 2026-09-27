@@ -1,5 +1,7 @@
 package br.com.reconcile.reconciliation.domain
 
+import br.com.reconcile.shared.api.apiMessage
+
 class IllegalCaseTransitionException(message: String) : IllegalStateException(message)
 
 enum class CaseStatus {
@@ -20,7 +22,7 @@ object CaseStateMachine {
     fun transition(from: CaseStatus, to: CaseStatus): CaseStatus {
         val next = allowed[from].orEmpty()
         if (to !in next) {
-            throw IllegalCaseTransitionException("Transição de caso inválida: $from -> $to")
+            throw IllegalCaseTransitionException(apiMessage("case.transition", from, to))
         }
         return to
     }

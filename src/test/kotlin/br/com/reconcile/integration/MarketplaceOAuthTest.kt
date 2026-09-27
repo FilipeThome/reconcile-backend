@@ -13,11 +13,15 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.match.MockRestRequestMatchers.method
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
+import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 import org.springframework.web.client.RestClient
 import org.springframework.web.util.UriComponentsBuilder
@@ -242,6 +246,41 @@ class MarketplaceOAuthTest {
         assertEquals(true, client.postJson("http://localhost/json", mapOf("code" to "x"))["ok"])
         assertEquals(7, (client.getJson("http://localhost/me", "tok")["id"] as Number).toInt())
         assertTrue(client.getJsonOrEmpty("http://localhost/missing", "tok").isEmpty())
+        server.verify()
+    }
+
+    @Test
+    fun `rest client exchanges json with headers and error bodies`() {
+        val builder = RestClient.builder()
+        val server = MockRestServiceServer.bindTo(builder).build()
+        val client = RestJsonHttpClient(builder)
+        val headers = HttpHeaders()
+        headers.add("x-version", "7")
+        server.expect(requestTo("http://localhost/stock")).andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("""{"quantity":1}""", MediaType.APPLICATION_JSON).headers(headers))
+        server.expect(requestTo("http://localhost/stock")).andExpect(method(HttpMethod.PUT))
+            .andRespond(withStatus(HttpStatus.NO_CONTENT))
+        server.expect(requestTo("http://localhost/stock")).andExpect(method(HttpMethod.PUT))
+            .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).body("""{"message":"nope"}"""))
+        server.expect(requestTo("http://localhost/broken")).andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("not-json", MediaType.TEXT_PLAIN))
+        server.expect(requestTo("http://localhost/guarded")).andExpect(method(HttpMethod.GET))
+            .andExpect(header("Authorization", "Bearer tok"))
+            .andRespond(withSuccess("""{"ok":true}""", MediaType.APPLICATION_JSON))
+        val read = client.requestJson("GET", "http://localhost/stock", "tok")
+        assertEquals(1, (read.body as Map<*, *>)["quantity"])
+        assertEquals("7", read.headers["x-version"])
+        val updated = client.requestJson("PUT", "http://localhost/stock", "tok", mapOf("quantity" to 2), mapOf("x-version" to "7"))
+        assertEquals(204, updated.status)
+        assertEquals(null, updated.body)
+        val rejected = client.requestJson("PUT", "http://localhost/stock", "tok", mapOf("quantity" to 2))
+        assertEquals(400, rejected.status)
+        assertEquals("nope", (rejected.body as Map<*, *>)["message"])
+        assertEquals(null, client.requestJson("GET", "http://localhost/broken", "tok").body)
+        val guarded = client.requestJson("GET", "http://localhost/guarded", "tok", null, mapOf("Authorization" to "Bearer evil"))
+        assertEquals(true, (guarded.body as Map<*, *>)["ok"])
+        assertEquals(200, br.com.reconcile.integration.oauth.HttpJson(200, null).status)
+        assertThrows<IllegalArgumentException> { client.requestJson("DELETE", "http://localhost/x", "tok") }
         server.verify()
     }
 

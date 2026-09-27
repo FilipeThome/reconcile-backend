@@ -12,6 +12,7 @@ import br.com.reconcile.closing.infra.ExportRepository
 import br.com.reconcile.ledger.infra.OrderRepository
 import br.com.reconcile.reconciliation.infra.CaseRepository
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.security.currentUser
@@ -118,7 +119,7 @@ class ClosingService(
 
     private fun requireClosing(externalId: String) =
         closings.findByTenantIdAndExternalId(currentUser().tenantId, externalId)
-            ?: throw NotFoundException("Fechamento $externalId não encontrado")
+            ?: throw NotFoundException(apiMessage("closing.missing", externalId))
 
     private fun toDto(item: ClosingEntity) = mapOf(
         "id" to item.externalId,
@@ -143,7 +144,7 @@ class ReportService(private val exports: ExportRepository, private val audit: Au
     fun export(type: String): Map<String, String> {
         val safeType = type.lowercase()
         if (!safeType.matches(Regex("^[a-z0-9_-]{1,40}$"))) {
-            throw UnprocessableException("Tipo de relatório inválido")
+            throw UnprocessableException(apiMessage("report.type"))
         }
         val user = currentUser()
         val filename = "$safeType-${Instant.now().epochSecond}.csv"

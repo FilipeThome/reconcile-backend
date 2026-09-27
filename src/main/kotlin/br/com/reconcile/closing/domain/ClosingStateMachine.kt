@@ -1,5 +1,6 @@
 package br.com.reconcile.closing.domain
 
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.domain.Money
 import java.math.BigDecimal
 import java.time.Instant
@@ -27,14 +28,14 @@ class IllegalClosingTransitionException(message: String) : IllegalStateException
 object ClosingStateMachine {
     fun close(current: ClosingSnapshot, at: Instant): ClosingSnapshot {
         if (current.status != ClosingStatus.open) {
-            throw IllegalClosingTransitionException("Somente períodos OPEN podem ser fechados")
+            throw IllegalClosingTransitionException(apiMessage("closing.openOnly"))
         }
         return current.copy(status = ClosingStatus.closed, closedAt = at)
     }
 
     fun lateEvent(current: ClosingSnapshot, reason: String, amount: BigDecimal, at: Instant): ClosingDelta {
         if (current.status != ClosingStatus.closed) {
-            throw IllegalClosingTransitionException("Delta auditável só se aplica após CLOSED")
+            throw IllegalClosingTransitionException(apiMessage("closing.delta"))
         }
         return ClosingDelta(reason = reason, amount = Money.scale(amount), createdAt = at)
     }

@@ -23,13 +23,13 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalCaseTransitionException::class, IllegalClosingTransitionException::class)
     fun handleDomain(ex: RuntimeException) =
-        ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse("CONFLICT", ex.message ?: "invalid_transition"))
+        ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse("CONFLICT", ex.message ?: apiMessage("transition.invalid")))
 
     @ExceptionHandler(BadCredentialsException::class)
-    fun handleAuth() = ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse("UNAUTHORIZED", "Credenciais inválidas"))
+    fun handleAuth() = ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse("UNAUTHORIZED", apiMessage("auth.badCredentials")))
 
     @ExceptionHandler(AccessDeniedException::class)
-    fun handleDenied() = ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse("FORBIDDEN", "Acesso negado"))
+    fun handleDenied() = ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse("FORBIDDEN", apiMessage("auth.denied")))
 
     @ExceptionHandler(
         MethodArgumentNotValidException::class,
@@ -38,16 +38,16 @@ class GlobalExceptionHandler {
         DateTimeParseException::class,
         IllegalArgumentException::class,
     )
-    fun handleValidation() = ResponseEntity.badRequest().body(ErrorResponse("VALIDATION", "Requisição inválida"))
+    fun handleValidation() = ResponseEntity.badRequest().body(ErrorResponse("VALIDATION", apiMessage("auth.invalidRequest")))
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
     fun handleMethod() =
-        ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ErrorResponse("METHOD_NOT_ALLOWED", "Método não suportado"))
+        ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ErrorResponse("METHOD_NOT_ALLOWED", apiMessage("auth.method")))
 
     @ExceptionHandler(IllegalStateException::class)
     fun handleIllegalState(ex: IllegalStateException) =
-        ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse("UNAUTHORIZED", ex.message ?: "Usuário autenticado ausente"))
+        ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse("UNAUTHORIZED", ex.message ?: apiMessage("auth.missingUser")))
 
     @ExceptionHandler(Exception::class)
-    fun handleGeneric() = ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse("ERROR", "Falha interna"))
+    fun handleGeneric() = ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse("ERROR", apiMessage("auth.internal")))
 }

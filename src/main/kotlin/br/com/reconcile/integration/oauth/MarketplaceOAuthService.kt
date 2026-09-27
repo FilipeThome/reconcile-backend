@@ -1,6 +1,7 @@
 package br.com.reconcile.integration.oauth
 
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.util.UriComponentsBuilder
@@ -76,7 +77,7 @@ class MarketplaceOAuthService(
             "ml" -> mercadoLivreAuthorizeUrl(config, state, verifier)
             "shopee" -> shopeeAuthorizeUrl(config, state)
             "amazon" -> amazonAuthorizeUrl(config, state)
-            else -> throw UnprocessableException("Provedor OAuth $provider não suportado")
+            else -> throw UnprocessableException(apiMessage("oauth.provider", provider))
         }
         return OAuthStart(url)
     }
@@ -92,17 +93,17 @@ class MarketplaceOAuthService(
         val normalized = normalizeProvider(provider)
         val pendingAuth = consumeState(state)
         if (pendingAuth.provider != normalized) {
-            throw UnprocessableException("OAuth state não corresponde ao provedor $normalized")
+            throw UnprocessableException(apiMessage("oauth.stateMismatch", normalized))
         }
         if (code.isNullOrBlank()) {
-            throw UnprocessableException("Código de autorização ausente")
+            throw UnprocessableException(apiMessage("oauth.codeMissing"))
         }
         val config = configOf(normalized)
         return when (normalized) {
             "ml" -> exchangeMercadoLivre(pendingAuth.tenantId, config, code, pendingAuth.verifier)
             "shopee" -> exchangeShopee(pendingAuth.tenantId, config, code, shopId, mainAccountId)
             "amazon" -> exchangeAmazon(pendingAuth.tenantId, config, code, sellingPartnerId)
-            else -> throw UnprocessableException("Provedor OAuth $normalized não suportado")
+            else -> throw UnprocessableException(apiMessage("oauth.provider", normalized))
         }
     }
 
@@ -118,9 +119,9 @@ class MarketplaceOAuthService(
         val config = configOf(provider)
         return if (config.clientId.isBlank() || config.clientSecret.isBlank() || config.redirectUri.isBlank()) {
             when (provider) {
-                "ml" -> "Defina MERCADO_LIVRE_CLIENT_ID, MERCADO_LIVRE_CLIENT_SECRET e a redirect URI no .env"
-                "amazon" -> "Defina AMAZON_CLIENT_ID, AMAZON_CLIENT_SECRET e a redirect URI no .env"
-                else -> "Defina SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY e a redirect URI no .env"
+                "ml" -> apiMessage("oauth.hint.ml")
+                "amazon" -> apiMessage("oauth.hint.amazon")
+                else -> apiMessage("oauth.hint.shopee")
             }
         } else {
             null
@@ -222,7 +223,7 @@ class MarketplaceOAuthService(
         when {
             shopId != null -> body["shop_id"] = shopId
             mainAccountId != null -> body["main_account_id"] = mainAccountId
-            else -> throw UnprocessableException("Shopee não devolveu shop_id nem main_account_id")
+            else -> throw UnprocessableException(apiMessage("oauth.shopeeIds"))
         }
         val token = http.postJson(url, body)
         if (token["error"]?.toString()?.isNotBlank() == true) throw oauthFailure(token, "Shopee")
@@ -233,7 +234,7 @@ class MarketplaceOAuthService(
             shopId != null -> shopId.toString()
             listedShop != null && merchantId != null -> "m:$merchantId:$listedShop"
             listedShop != null -> listedShop.toString()
-            else -> throw UnprocessableException("Shopee não devolveu shop_id. Reconecte autorizando uma loja.")
+            else -> throw UnprocessableException(apiMessage("oauth.shopeeShop"))
         }
         return OAuthTokens(
             provider = "shopee",
@@ -253,7 +254,7 @@ class MarketplaceOAuthService(
     ): OAuthTokens {
         val seller = sellingPartnerId?.trim().orEmpty()
         if (!AMAZON_SELLER_ID.matches(seller)) {
-            throw UnprocessableException("selling_partner_id da Amazon é inválido")
+            throw UnprocessableException(apiMessage("oauth.amazonSeller"))
         }
         val token = http.postForm(
             config.tokenUrl,
@@ -336,11 +337,11 @@ class MarketplaceOAuthService(
         val raw = shopId?.trim().orEmpty()
         if (raw.startsWith("m:")) {
             val merchant = raw.removePrefix("m:").substringBefore(':').toLongOrNull()
-                ?: throw UnprocessableException("Merchant da Shopee ausente. Reconecte a integração.")
+                ?: throw UnprocessableException(apiMessage("oauth.shopeeMerchant"))
             body["merchant_id"] = merchant
         } else {
             val shop = raw.toLongOrNull()
-                ?: throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+                ?: throw UnprocessableException(apiMessage("oauth.shopeeShopMissing"))
             body["shop_id"] = shop
         }
         val token = http.postJson(url, body)
@@ -356,9 +357,9 @@ class MarketplaceOAuthService(
 
     private fun consumeState(state: String?): PendingAuth {
         val nonce = verify(state)
-        val pendingAuth = pending.remove(nonce) ?: throw UnprocessableException("Sessão OAuth expirada ou inválida")
+        val pendingAuth = pending.remove(nonce) ?: throw UnprocessableException(apiMessage("oauth.session"))
         if (pendingAuth.expiresAt.isBefore(Instant.now())) {
-            throw UnprocessableException("Sessão OAuth expirada ou inválida")
+            throw UnprocessableException(apiMessage("oauth.session"))
         }
         return pendingAuth
     }
@@ -367,7 +368,7 @@ class MarketplaceOAuthService(
         if (config.clientId.isBlank() || config.clientSecret.isBlank() || config.redirectUri.isBlank() ||
             config.authorizeUrl.isBlank() || config.tokenUrl.isBlank()
         ) {
-            throw UnprocessableException(configuredHint(provider) ?: "Credenciais OAuth ausentes")
+            throw UnprocessableException(configuredHint(provider) ?: apiMessage("oauth.credentials"))
         }
     }
 
@@ -375,11 +376,11 @@ class MarketplaceOAuthService(
         "ml" -> properties.mercadoLivre
         "shopee" -> properties.shopee
         "amazon" -> properties.amazon
-        else -> throw UnprocessableException("Provedor OAuth $provider não suportado")
+        else -> throw UnprocessableException(apiMessage("oauth.provider", provider))
     }
 
     private fun requireProvider(externalId: String) =
-        providerOf(externalId) ?: throw UnprocessableException("Integração $externalId não usa OAuth")
+        providerOf(externalId) ?: throw UnprocessableException(apiMessage("oauth.notOauth", externalId))
 
     private fun providerOf(externalId: String) = when (externalId.lowercase()) {
         "ml", "mercadolivre", "mercado-livre" -> "ml"
@@ -402,14 +403,17 @@ class MarketplaceOAuthService(
     }
 
     private fun normalizeProvider(provider: String) =
-        providerOf(provider) ?: throw UnprocessableException("Provedor OAuth $provider não suportado")
+        providerOf(provider) ?: throw UnprocessableException(apiMessage("oauth.provider", provider))
 
     private fun sign(nonce: String): String = "$nonce.${hmacHex(signingSecret, nonce)}"
 
     private fun verify(state: String?): String {
         val parts = state?.split('.', limit = 2)
-        if (parts == null || parts.size != 2) throw UnprocessableException("OAuth state inválido")
-        if (hmacHex(signingSecret, parts[0]) != parts[1]) throw UnprocessableException("OAuth state inválido")
+        if (parts == null || parts.size != 2) throw UnprocessableException(apiMessage("oauth.state"))
+        val expected = hmacHex(signingSecret, parts[0])
+        if (!MessageDigest.isEqual(expected.toByteArray(StandardCharsets.UTF_8), parts[1].toByteArray(StandardCharsets.UTF_8))) {
+            throw UnprocessableException(apiMessage("oauth.state"))
+        }
         return parts[0]
     }
 
@@ -457,7 +461,7 @@ class MarketplaceOAuthService(
         val message = payload["message"]?.toString()
             ?: payload["error_description"]?.toString()
             ?: payload["error"]?.toString()
-            ?: "Falha ao trocar o código $name"
+            ?: apiMessage("oauth.exchange", name)
         return UnprocessableException(message)
     }
 

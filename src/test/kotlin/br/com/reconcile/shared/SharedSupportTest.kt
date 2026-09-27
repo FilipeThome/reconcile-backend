@@ -7,6 +7,8 @@ import br.com.reconcile.reconciliation.domain.IllegalCaseTransitionException
 import br.com.reconcile.reconciliation.domain.MatchingEngine
 import br.com.reconcile.reconciliation.domain.MatchingLayer
 import br.com.reconcile.shared.api.ApiException
+import br.com.reconcile.shared.api.ApiLocaleConfig
+import br.com.reconcile.shared.api.ApiLocaleFilter
 import br.com.reconcile.shared.api.ConflictException
 import br.com.reconcile.shared.api.ErrorResponse
 import br.com.reconcile.shared.api.ForbiddenException
@@ -14,6 +16,10 @@ import br.com.reconcile.shared.api.GlobalExceptionHandler
 import br.com.reconcile.shared.api.HealthController
 import br.com.reconcile.shared.api.NotFoundException
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiErrorBody
+import br.com.reconcile.shared.api.apiMessage
+import br.com.reconcile.shared.api.apiMessageCatalogsMatch
+import br.com.reconcile.shared.api.resolveApiLocale
 import br.com.reconcile.shared.audit.AuditLogRepository
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.config.DomainConfig
@@ -32,13 +38,22 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito
+import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.http.HttpStatus
+import jakarta.servlet.FilterChain
 import org.springframework.mock.web.MockFilterChain
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.crypto.factory.PasswordEncoderFactories
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RestController
+import java.util.Locale
 import java.util.Optional
 import java.math.BigDecimal
 import kotlin.test.assertEquals
@@ -48,6 +63,7 @@ class SharedSupportTest {
     @AfterEach
     fun cleanup() {
         TestAuth.logout()
+        LocaleContextHolder.resetLocaleContext()
     }
 
     @Test
@@ -154,6 +170,66 @@ class SharedSupportTest {
     }
 
     @Test
+    fun `accept language selects portuguese or english errors`() {
+        assertTrue(apiMessageCatalogsMatch())
+        assertEquals("pt", resolveApiLocale(null).language)
+        assertEquals("pt", resolveApiLocale("pt-BR,en;q=0.5").language)
+        assertEquals("pt", resolveApiLocale("fr-FR").language)
+        assertEquals("en", resolveApiLocale("en").language)
+        assertEquals("en", resolveApiLocale("en-US,en;q=0.9").language)
+        assertTrue(apiMessage("auth.badCredentials").contains("Credenciais"))
+        assertTrue(apiMessage("missing.key") == "missing.key")
+        assertTrue(apiErrorBody("UNAUTHORIZED", "say \"hi\"\\\r\n").contains("\\\""))
+
+        LocaleContextHolder.setLocale(Locale.forLanguageTag("en-US"))
+        assertEquals("Invalid credentials", apiMessage("auth.badCredentials"))
+        assertEquals("Invalid credentials", GlobalExceptionHandler().handleAuth().body?.message)
+        assertTrue(apiMessage("stock.remote", 401, "nope").contains("401"))
+        assertTrue(apiMessage("stock.remote", 401, "nope").contains("nope"))
+        LocaleContextHolder.resetLocaleContext()
+
+        val jwt = JwtService(TestAuth.JWT_SECRET, 1)
+        val english = MockHttpServletRequest()
+        english.addHeader("Accept-Language", "en-US")
+        english.addHeader("Authorization", "Bearer ")
+        val englishRes = MockHttpServletResponse()
+        ApiLocaleFilter().doFilter(english, englishRes, FilterChain { request, response ->
+            JwtAuthFilter(jwt) { it }.doFilter(request, response, MockFilterChain())
+        })
+        assertEquals(401, englishRes.status)
+        assertTrue(englishRes.contentAsString.contains("Missing token"))
+        assertEquals(null, LocaleContextHolder.getLocaleContext())
+
+        val portuguese = MockHttpServletRequest()
+        portuguese.addHeader("Accept-Language", "pt-BR")
+        portuguese.addHeader("Authorization", "Bearer ")
+        val portugueseRes = MockHttpServletResponse()
+        ApiLocaleFilter().doFilter(portuguese, portugueseRes, FilterChain { request, response ->
+            JwtAuthFilter(jwt) { it }.doFilter(request, response, MockFilterChain())
+        })
+        assertTrue(portugueseRes.contentAsString.contains("Token ausente"))
+    }
+
+    @Test
+    fun `mvc defaults to portuguese and honors accept language`() {
+        val resolver = ApiLocaleConfig().localeResolver()
+        assertEquals("pt-BR", resolver.resolveLocale(MockHttpServletRequest()).toLanguageTag())
+
+        val mvc = MockMvcBuilders.standaloneSetup(BadCredentialsProbeController())
+            .setControllerAdvice(GlobalExceptionHandler())
+            .setLocaleResolver(resolver)
+            .build()
+
+        mvc.perform(get("/probe-credentials"))
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.message").value("Credenciais inválidas"))
+
+        mvc.perform(get("/probe-credentials").header("Accept-Language", "en-US"))
+            .andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.message").value("Invalid credentials"))
+    }
+
+    @Test
     fun `session loader uses database role and rejects missing users`() {
         val users = Mockito.mock(UserRepository::class.java)
         val tenants = Mockito.mock(TenantRepository::class.java)
@@ -231,4 +307,10 @@ class SharedSupportTest {
         AuditService(logs).record(TestAuth.tenantId, "Ana", "act", "case", "1")
         Mockito.verify(logs).save(Mockito.any() ?: br.com.reconcile.shared.audit.AuditLogEntity())
     }
+}
+
+@RestController
+private class BadCredentialsProbeController {
+    @GetMapping("/probe-credentials")
+    fun probe(): Nothing = throw BadCredentialsException("x")
 }

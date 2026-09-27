@@ -9,6 +9,7 @@ import br.com.reconcile.integration.oauth.JsonHttpClient
 import br.com.reconcile.integration.oauth.MarketplaceOAuthProperties
 import br.com.reconcile.integration.oauth.ProviderProperties
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URI
@@ -90,10 +91,10 @@ class AmazonCatalog(
 
     private fun requireConfigured(config: ProviderProperties) {
         if (config.clientId.isBlank() || config.clientSecret.isBlank()) {
-            throw UnprocessableException("Defina AMAZON_CLIENT_ID e AMAZON_CLIENT_SECRET no .env")
+            throw UnprocessableException(apiMessage("amazon.client"))
         }
         if (config.awsAccessKey.isBlank() || config.awsSecretKey.isBlank()) {
-            throw UnprocessableException("Defina AMAZON_AWS_ACCESS_KEY e AMAZON_AWS_SECRET_KEY no .env")
+            throw UnprocessableException(apiMessage("amazon.aws"))
         }
     }
 

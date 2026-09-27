@@ -1,6 +1,7 @@
 package br.com.reconcile.integration.ingestion
 
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.stereotype.Component
 
 @Component
@@ -11,5 +12,5 @@ class MarketplaceCatalogRegistry(catalogs: List<MarketplaceCatalog>) {
 
     fun require(providerId: String): MarketplaceCatalog =
         byId[providerId.lowercase()]
-            ?: throw UnprocessableException("Ingestão não suportada para $providerId")
+            ?: throw UnprocessableException(apiMessage("ingest.unsupported", providerId))
 }

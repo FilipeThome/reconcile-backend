@@ -204,12 +204,12 @@ class RemainingServicesTest {
         val jwt = JwtService(TestAuth.JWT_SECRET, 1)
         val user = UserEntity(id = TestAuth.userId, tenantId = tenant, name = "Ana", email = "ana@x.com", passwordHash = "hash", role = "admin")
         val tenantEntity = TenantEntity(id = tenant, externalId = "ten_8f2c1a", name = "Loja")
-        Mockito.`when`(users.findByEmail("ana@x.com")).thenReturn(user)
+        Mockito.`when`(users.findByEmailIgnoreCase("ana@x.com")).thenReturn(user)
         Mockito.`when`(encoder.matches("senha", "hash")).thenReturn(true)
         Mockito.`when`(tenants.findById(tenant)).thenReturn(Optional.of(tenantEntity))
         val auth = AuthService(users, tenants, encoder, jwt)
         assertEquals("Ana", auth.login("ana@x.com", "senha").name)
-        Mockito.`when`(users.findByEmail("nope")).thenReturn(null)
+        Mockito.`when`(users.findByEmailIgnoreCase("nope")).thenReturn(null)
         assertThrows<BadCredentialsException> { auth.login("nope", "x") }
         Mockito.`when`(encoder.matches("bad", "hash")).thenReturn(false)
         assertThrows<BadCredentialsException> { auth.login("ana@x.com", "bad") }
