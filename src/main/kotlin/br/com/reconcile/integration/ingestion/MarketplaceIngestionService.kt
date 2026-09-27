@@ -4,6 +4,7 @@ import br.com.reconcile.integration.infra.ConnectionEntity
 import br.com.reconcile.integration.infra.ConnectionRepository
 import br.com.reconcile.integration.oauth.MarketplaceOAuthService
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClientResponseException
 import java.time.Instant
@@ -19,9 +20,9 @@ class MarketplaceIngestionService(
 
     fun ingest(connection: ConnectionEntity): IngestionResult {
         if (connection.status != "ativa") {
-            throw UnprocessableException("Conecte ${connection.name} antes do backfill")
+            throw UnprocessableException(apiMessage("ingest.connect", connection.name))
         }
-        val access = connection.accessToken ?: throw UnprocessableException("Token OAuth ausente. Reconecte ${connection.name}.")
+        val access = connection.accessToken ?: throw UnprocessableException(apiMessage("ingest.token", connection.name))
         val lease = oauth.ensureAccessToken(
             connection.externalId,
             access,
@@ -47,7 +48,7 @@ class MarketplaceIngestionService(
                 IngestionWindow.lastDays(90),
             )
         } catch (ex: RestClientResponseException) {
-            throw UnprocessableException("A API do marketplace recusou a consulta (${ex.statusCode.value()})")
+            throw UnprocessableException(apiMessage("ingest.refused", ex.statusCode.value()))
         }
         val result = writer.persist(connection.tenantId, snapshot.sales)
         connection.lastSyncAt = Instant.now()

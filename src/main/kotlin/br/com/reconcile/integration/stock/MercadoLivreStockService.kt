@@ -4,6 +4,7 @@ import br.com.reconcile.integration.infra.ConnectionEntity
 import br.com.reconcile.integration.infra.ConnectionRepository
 import br.com.reconcile.integration.oauth.MarketplaceOAuthService
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.security.AuthUser
@@ -78,11 +79,11 @@ class MercadoLivreStockService(
     private fun access(): Access {
         val user = currentUser()
         val connection = connections.findByTenantIdAndExternalId(user.tenantId, "ml")
-            ?: throw NotFoundException("Integração Mercado Livre não encontrada")
+            ?: throw NotFoundException(apiMessage("stock.integrationMissing"))
         if (connection.status != "ativa") {
-            throw UnprocessableException("Conecte o Mercado Livre antes de consultar o estoque.")
+            throw UnprocessableException(apiMessage("stock.connect"))
         }
-        val token = connection.accessToken ?: throw UnprocessableException("Token OAuth ausente. Reconecte o Mercado Livre.")
+        val token = connection.accessToken ?: throw UnprocessableException(apiMessage("stock.token"))
         val lease = oauth.ensureAccessToken(
             "ml",
             token,
@@ -103,7 +104,7 @@ class MercadoLivreStockService(
     private fun normalizeStatus(status: String?): String? = when (val clean = status?.trim()?.lowercase()) {
         null, "", "all" -> null
         "active", "paused", "closed", "under_review", "inactive" -> clean
-        else -> throw UnprocessableException("Status de anúncio inválido.")
+        else -> throw UnprocessableException(apiMessage("stock.status"))
     }
 
     private fun auditDetails(quantity: Int, variationId: Long?, storeId: String?, networkNodeId: String?): String {

@@ -11,6 +11,7 @@ import br.com.reconcile.integration.ingestion.MarketplaceIngestionService
 import br.com.reconcile.integration.oauth.MarketplaceOAuthService
 import br.com.reconcile.integration.oauth.OAuthTokens
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.audit.AuditService
 import br.com.reconcile.shared.security.currentUser
 import org.springframework.stereotype.Service
@@ -133,7 +134,7 @@ class IntegrationService(
 
     private fun requireConnection(tenantId: UUID, externalId: String) =
         connections.findByTenantIdAndExternalId(tenantId, externalId)
-            ?: throw NotFoundException("Integração $externalId não encontrada")
+            ?: throw NotFoundException(apiMessage("integration.missing", externalId))
 
     private fun upsertSeller(tokens: OAuthTokens) {
         val marketplace = when (tokens.provider) {

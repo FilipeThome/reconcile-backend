@@ -5,6 +5,7 @@ import br.com.reconcile.integration.oauth.HttpJson
 import br.com.reconcile.integration.oauth.JsonHttpClient
 import br.com.reconcile.integration.oauth.MarketplaceOAuthProperties
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.api.UnprocessableException
 import com.fasterxml.jackson.annotation.JsonIgnore
 import org.springframework.stereotype.Component
@@ -59,10 +60,10 @@ class MercadoLivreStockClient(
         if (response.status >= 400) throw remote(response)
         val id = CatalogJson.text(CatalogJson.map(response.body), "id")
         if (id == null || !SELLER_ID.matches(id)) {
-            throw UnprocessableException("Não foi possível identificar o seller do Mercado Livre.")
+            throw UnprocessableException(apiMessage("stock.sellerUnknown"))
         }
         if (SELLER_ID.matches(stored) && stored != id) {
-            throw UnprocessableException("O seller salvo não corresponde à conta conectada. Reconecte o Mercado Livre.")
+            throw UnprocessableException(apiMessage("stock.sellerMismatch"))
         }
         return id
     }
@@ -92,12 +93,12 @@ class MercadoLivreStockClient(
         storeId: String?,
         networkNodeId: String? = null,
     ): StockItem {
-        if (quantity !in 0..99_999) throw UnprocessableException("A quantidade deve ficar entre 0 e 99999.")
+        if (quantity !in 0..99_999) throw UnprocessableException(apiMessage("stock.quantity"))
         val cleanStore = storeId?.trim()?.ifBlank { null }
         val cleanNode = networkNodeId?.trim()?.ifBlank { null }
-        if (cleanStore != null && !STORE_ID.matches(cleanStore)) throw UnprocessableException("Depósito inválido.")
-        if (cleanNode != null && !NODE_ID.matches(cleanNode)) throw UnprocessableException("Depósito inválido.")
-        if (variationId != null && variationId <= 0) throw UnprocessableException("Variação inválida.")
+        if (cleanStore != null && !STORE_ID.matches(cleanStore)) throw UnprocessableException(apiMessage("stock.warehouseInvalid"))
+        if (cleanNode != null && !NODE_ID.matches(cleanNode)) throw UnprocessableException(apiMessage("stock.warehouseInvalid"))
+        if (variationId != null && variationId <= 0) throw UnprocessableException(apiMessage("stock.variationInvalid"))
         val loaded = load(token, sellerId, itemId)
         val variation = variationOf(loaded.view, variationId)
         if (variation != null && variation.userProductId.isNullOrBlank()) {
@@ -108,7 +109,7 @@ class MercadoLivreStockClient(
             return load(token, sellerId, itemId).view
         }
         if (loaded.stockUnavailable) {
-            throw UnprocessableException("Não foi possível ler o estoque deste anúncio no Mercado Livre.")
+            throw UnprocessableException(apiMessage("stock.unreadable"))
         }
         if (!loaded.view.editable) throw UnprocessableException(readOnlyMessage(loaded.view))
         val variationProduct = variation?.userProductId?.takeIf { it.isNotBlank() }
@@ -128,7 +129,7 @@ class MercadoLivreStockClient(
             return load(token, sellerId, itemId).view
         }
         if (snapshot.locations.isNotEmpty() && snapshot.locations.none { it.editable }) {
-            throw UnprocessableException("Estoque Full (Mercado Livre) não pode ser alterado por esta API.")
+            throw UnprocessableException(apiMessage("stock.full"))
         }
         ensureOk(putItem(itemId, token, mapOf("available_quantity" to quantity)))
         return load(token, sellerId, itemId).view
@@ -146,11 +147,11 @@ class MercadoLivreStockClient(
 
     private fun variationOf(item: StockItem, variationId: Long?): StockVariation? {
         if (item.variations.isNotEmpty() && variationId == null) {
-            throw UnprocessableException("Informe a variação para atualizar o estoque.")
+            throw UnprocessableException(apiMessage("stock.variationRequired"))
         }
         if (variationId == null) return null
         return item.variations.find { it.id == variationId }
-            ?: throw NotFoundException("Variação não encontrada neste anúncio.")
+            ?: throw NotFoundException(apiMessage("stock.variationMissing"))
     }
 
     private fun search(
@@ -175,11 +176,11 @@ class MercadoLivreStockClient(
         requireSeller(sellerId)
         requireItemId(itemId)
         val response = remoteCall("GET", "${base()}/items/$itemId", token)
-        if (response.status == 404) throw NotFoundException("Anúncio $itemId não encontrado.")
+        if (response.status == 404) throw NotFoundException(apiMessage("stock.itemWithId", itemId))
         if (response.status >= 400) throw remote(response)
         val item = CatalogJson.map(response.body)
         if (CatalogJson.text(item, "seller_id") != sellerId) {
-            throw NotFoundException("Anúncio não encontrado na conta conectada.")
+            throw NotFoundException(apiMessage("stock.itemOtherAccount"))
         }
         val userProductId = CatalogJson.text(item, "user_product_id")
         val stock = if (userProductId.isNullOrBlank()) {
@@ -214,7 +215,7 @@ class MercadoLivreStockClient(
 
     private fun readStock(token: String, userProductId: String, required: Boolean): StockSnapshot {
         if (!USER_PRODUCT_ID.matches(userProductId)) {
-            if (required) throw UnprocessableException("user_product_id inválido.")
+            if (required) throw UnprocessableException(apiMessage("stock.userProductInvalid"))
             return StockSnapshot(emptyList(), null, unavailable = true)
         }
         val response = remoteCall("GET", "${base()}/user-products/$userProductId/stock", token)
@@ -251,22 +252,22 @@ class MercadoLivreStockClient(
                 location.storeId == storeId && (networkNodeId == null || location.networkNodeId == networkNodeId)
             }
             warehouses.size == 1 -> warehouses.filter { networkNodeId == null || it.networkNodeId == networkNodeId }
-            else -> throw UnprocessableException("Há mais de um depósito. Informe qual estoque atualizar.")
+            else -> throw UnprocessableException(apiMessage("stock.manyWarehouses"))
         }
-        if (matches.isEmpty()) throw UnprocessableException("Depósito não encontrado neste anúncio.")
+        if (matches.isEmpty()) throw UnprocessableException(apiMessage("stock.warehouseMissing"))
         if (matches.size > 1) {
-            throw UnprocessableException("Há mais de um depósito com esse identificador. Informe o nó do depósito.")
+            throw UnprocessableException(apiMessage("stock.warehouseNode"))
         }
         val target = matches.single()
         if (target.storeId.isNullOrBlank() || target.networkNodeId.isNullOrBlank()) {
-            throw UnprocessableException("Depósito sem identificador para atualizar o estoque.")
+            throw UnprocessableException(apiMessage("stock.warehouseNoId"))
         }
         return target
     }
 
     private fun warehouseBody(warehouses: List<StockLocation>, target: StockLocation, quantity: Int): Map<String, Any?> {
         if (warehouses.any { !sameWarehouse(it, target) && !it.quantityKnown }) {
-            throw UnprocessableException("A API do Mercado Livre não informou a quantidade de um depósito.")
+            throw UnprocessableException(apiMessage("stock.warehouseQty"))
         }
         return mapOf(
             "locations" to warehouses.map { location ->
@@ -311,7 +312,7 @@ class MercadoLivreStockClient(
 
     private fun versionHeader(version: String?): String {
         if (version == null || !VERSION.matches(version)) {
-            throw UnprocessableException("A API do Mercado Livre não informou a versão do estoque.")
+            throw UnprocessableException(apiMessage("stock.version"))
         }
         return version
     }
@@ -330,7 +331,7 @@ class MercadoLivreStockClient(
         headers: Map<String, String> = emptyMap(),
     ): HttpJson {
         val root = base()
-        if (!url.startsWith("$root/")) throw UnprocessableException("URL do Mercado Livre inválida.")
+        if (!url.startsWith("$root/")) throw UnprocessableException(apiMessage("stock.badUrl"))
         return http.requestJson(method, url, token, body, headers)
     }
 
@@ -384,11 +385,11 @@ class MercadoLivreStockClient(
     }
 
     private fun readOnlyMessage(item: StockItem): String {
-        if (item.status in LOCKED_STATUS) return "Anúncios com status ${item.status} não aceitam atualização de estoque."
+        if (item.status in LOCKED_STATUS) return apiMessage("stock.locked", item.status)
         if (item.locations.isEmpty() || item.locations.all { it.type == "meli_facility" }) {
-            return "Estoque Full (Mercado Livre) não pode ser alterado por esta API."
+            return apiMessage("stock.full")
         }
-        return "Este anúncio não aceita atualização de estoque."
+        return apiMessage("stock.readonly")
     }
 
     private fun locationsOf(body: Any?): List<StockLocation> =
@@ -422,33 +423,33 @@ class MercadoLivreStockClient(
     }
 
     private fun requireUserProduct(userProductId: String?): String {
-        if (userProductId.isNullOrBlank()) throw UnprocessableException("Anúncio sem user product para atualizar este estoque.")
+        if (userProductId.isNullOrBlank()) throw UnprocessableException(apiMessage("stock.noUserProduct"))
         return userProductId
     }
 
     private fun ensureOk(response: HttpJson) {
-        if (response.status == 404) throw NotFoundException("Anúncio não encontrado.")
+        if (response.status == 404) throw NotFoundException(apiMessage("stock.itemMissing"))
         if (response.status >= 400) throw remote(response)
     }
 
     private fun remote(response: HttpJson): UnprocessableException {
         val map = CatalogJson.map(response.body)
         val cause = CatalogJson.maps(map["cause"]).firstNotNullOfOrNull { CatalogJson.text(it, "message") }
-        val message = cause ?: CatalogJson.text(map, "message") ?: "erro desconhecido"
-        return UnprocessableException("A API do Mercado Livre recusou a operação (${response.status}): $message")
+        val message = cause ?: CatalogJson.text(map, "message") ?: apiMessage("stock.remoteUnknown")
+        return UnprocessableException(apiMessage("stock.remote", response.status, message))
     }
 
     private fun requireSeller(sellerId: String) {
-        if (!SELLER_ID.matches(sellerId)) throw UnprocessableException("Seller do Mercado Livre inválido. Reconecte a integração.")
+        if (!SELLER_ID.matches(sellerId)) throw UnprocessableException(apiMessage("stock.sellerInvalid"))
     }
 
     private fun requireItemId(itemId: String) {
-        if (!ITEM_ID.matches(itemId)) throw UnprocessableException("Identificador de anúncio inválido.")
+        if (!ITEM_ID.matches(itemId)) throw UnprocessableException(apiMessage("stock.itemId"))
     }
 
     private fun base(): String {
         val configured = properties.mercadoLivre.apiUrl.trim()
-        if (configured.isBlank()) throw UnprocessableException("API do Mercado Livre não configurada.")
+        if (configured.isBlank()) throw UnprocessableException(apiMessage("stock.apiMissing"))
         return configured.trimEnd('/')
     }
 

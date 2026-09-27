@@ -22,14 +22,13 @@ class ClientIpResolver(
     }
 
     private fun forwardedClient(request: HttpServletRequest): String {
-        val realIp = normalize(request.getHeader("X-Real-IP"))
-        if (realIp.isNotEmpty()) return realIp
-        val forwarded = request.getHeader("X-Forwarded-For").orEmpty()
+        val chain = request.getHeader("X-Forwarded-For").orEmpty()
             .split(",")
             .map { normalize(it) }
             .lastOrNull { it.isNotEmpty() }
             .orEmpty()
-        return forwarded
+        if (chain.isNotEmpty()) return chain
+        return normalize(request.getHeader("X-Real-IP"))
     }
 
     private fun normalize(value: String?): String {

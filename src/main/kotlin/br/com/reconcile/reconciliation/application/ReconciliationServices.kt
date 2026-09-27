@@ -34,6 +34,7 @@ import br.com.reconcile.reconciliation.infra.RuleRepository
 import br.com.reconcile.reconciliation.infra.SnapshotEntity
 import br.com.reconcile.reconciliation.infra.SnapshotRepository
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.api.UnprocessableException
 import br.com.reconcile.shared.audit.AuditService
@@ -125,7 +126,7 @@ class CaseService(
     @Transactional
     fun addComment(externalId: String, text: String) {
         val body = text.trim()
-        if (body.isEmpty() || body.length > 2000) throw UnprocessableException("Comentário inválido")
+        if (body.isEmpty() || body.length > 2000) throw UnprocessableException(apiMessage("comment.invalid"))
         val item = requireCase(externalId)
         val user = currentUser()
         comments.save(CaseCommentEntity(tenantId = item.tenantId, caseId = item.id, author = user.displayName, body = body))
@@ -134,12 +135,12 @@ class CaseService(
 
     private fun parseCaseStatus(status: String) =
         runCatching { CaseStatus.valueOf(status) }.getOrElse {
-            throw UnprocessableException("Status de caso inválido: $status")
+            throw UnprocessableException(apiMessage("case.status", status))
         }
 
     private fun requireCase(externalId: String): CaseEntity =
         cases.findByTenantIdAndExternalId(currentUser().tenantId, externalId)
-            ?: throw NotFoundException("Caso $externalId não encontrado")
+            ?: throw NotFoundException(apiMessage("case.missing", externalId))
 
     private fun caseSummary(item: CaseEntity) = mapOf(
         "id" to item.externalId,
@@ -173,7 +174,7 @@ class RuleQueryService(private val rules: RuleRepository, private val audit: Aud
     fun toggle(externalId: String) {
         val user = currentUser()
         val rule = rules.findByTenantIdAndExternalId(user.tenantId, externalId)
-            ?: throw NotFoundException("Regra $externalId não encontrada")
+            ?: throw NotFoundException(apiMessage("rule.missing", externalId))
         rule.active = !rule.active
         rules.save(rule)
         audit.record(user.tenantId, user.displayName, "rule.toggle", "rule", externalId)
@@ -194,7 +195,7 @@ class SnapshotQueryService(
     fun get(externalId: String): Map<String, Any?> {
         val tenant = currentUser().tenantId
         val item = snapshots.findByTenantIdAndExternalId(tenant, externalId)
-            ?: throw NotFoundException("Snapshot $externalId não encontrado")
+            ?: throw NotFoundException(apiMessage("snapshot.missing", externalId))
         val order = orders.findById(item.orderId).orElse(null)
         return snapshotDto(item, order?.externalId)
     }
@@ -285,7 +286,7 @@ class EngineService(
         val user = currentUser()
         val tenant = tenants.findById(user.tenantId).orElseThrow()
         val order = orders.findByTenantIdAndExternalId(user.tenantId, orderExternalId)
-            ?: throw NotFoundException("Pedido $orderExternalId não encontrado")
+            ?: throw NotFoundException(apiMessage("order.missing", orderExternalId))
         val payment = payments.findByTenantIdAndOrderId(user.tenantId, order.id).firstOrNull()
         val settlement = settlements.findByTenantIdAndOrderId(user.tenantId, order.id)
         val payoutPresent = payoutOrders.findByOrderId(order.id).isNotEmpty()

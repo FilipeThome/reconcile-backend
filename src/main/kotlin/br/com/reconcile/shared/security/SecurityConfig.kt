@@ -1,5 +1,7 @@
 package br.com.reconcile.shared.security
 
+import br.com.reconcile.shared.api.apiErrorBody
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -33,7 +35,7 @@ class SecurityConfig(
                 CorsConfiguration().apply {
                     allowedOrigins = originList
                     allowedMethods = listOf("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS")
-                    allowedHeaders = listOf("Authorization", "Content-Type", "X-Tenant-Id")
+                    allowedHeaders = listOf("Authorization", "Content-Type", "X-Tenant-Id", "Accept-Language")
                     exposedHeaders = listOf("Content-Disposition")
                     allowCredentials = true
                     maxAge = 3600
@@ -55,12 +57,12 @@ class SecurityConfig(
                 exceptions.authenticationEntryPoint { _, response, _ ->
                     response.status = 401
                     response.contentType = "application/json"
-                    response.writer.write("""{"code":"UNAUTHORIZED","message":"Autenticação necessária"}""")
+                    response.writer.write(apiErrorBody("UNAUTHORIZED", apiMessage("auth.required")))
                 }
                 exceptions.accessDeniedHandler { _, response, _ ->
                     response.status = 403
                     response.contentType = "application/json"
-                    response.writer.write("""{"code":"FORBIDDEN","message":"Acesso negado"}""")
+                    response.writer.write(apiErrorBody("FORBIDDEN", apiMessage("auth.denied")))
                 }
             }
             .authorizeHttpRequests {

@@ -1,18 +1,24 @@
 # Reconcile — backend
 
-API Kotlin/Spring Boot da reconciliação de marketplace. Postgres 16 + Flyway + JWT.
+[Português](README.pt-BR.md)
 
-## Configuração
+Kotlin and Spring Boot API for marketplace reconciliation. Postgres 16, Flyway, and JWT.
+
+**Author:** Filipe de Brito Thomé
+
+## Languages
+
+Error messages follow the `Accept-Language` header: `pt-BR` by default and `en-US` when that header asks for English. The React interface sends the language selected in the UI.
+
+## Setup
 
 ```bat
 copy .env.example .env
 ```
 
-Defina um `JWT_SECRET` com pelo menos 64 caracteres aleatórios e um `DATABASE_PASSWORD` próprio. O Compose recusa subir sem os dois.
+Set `JWT_SECRET` to at least 64 random characters and set your own `DATABASE_PASSWORD`. Compose will not start without both.
 
-Piloto local: `SEED_DEMO=true` e `SEED_LEDGER=true` (contas + pedidos de maio/2026). `SEED_LEDGER=false` esvazia o ledger para testar OAuth real; para voltar ao seed, recrie o volume (`docker compose down -v`).
-
-Em deploy público, use `SEED_DEMO=false` (apaga as contas piloto) e preencha `TRUSTED_PROXIES` com o IP do reverse proxy. Sem isso o limitador de login usa só o IP TCP e ignora `X-Real-IP` / `X-Forwarded-For`.
+Local pilot: `SEED_DEMO=true` and `SEED_LEDGER=true` loads accounts and May 2026 orders. `SEED_LEDGER=false` leaves the ledger empty for a real OAuth connection; restoring the seed requires `docker compose down -v`. On a public deploy, set `SEED_DEMO=false` and set `TRUSTED_PROXIES` to the reverse-proxy IP. Without that, the login limiter uses only the TCP address and ignores `X-Real-IP` / `X-Forwarded-For`.
 
 ## Docker
 
@@ -20,10 +26,14 @@ Em deploy público, use `SEED_DEMO=false` (apaga as contas piloto) e preencha `T
 docker compose up --build
 ```
 
-API em `http://127.0.0.1:8080`. Login piloto: `ana.dantas@lojaexemplo.com.br` / `senha123` (admin).
+The API listens on `http://127.0.0.1:8080`. Pilot login: `ana.dantas@lojaexemplo.com.br` / `senha123` (admin).
 
-## Testes
+## Tests
 
 ```bat
 gradlew.bat test
 ```
+
+## Copyright
+
+Copyright (c) 2026 Filipe de Brito Thomé. All rights reserved.

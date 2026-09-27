@@ -8,6 +8,7 @@ import br.com.reconcile.integration.ingestion.MarketplaceCatalog
 import br.com.reconcile.integration.oauth.JsonHttpClient
 import br.com.reconcile.integration.oauth.MarketplaceOAuthProperties
 import br.com.reconcile.shared.api.UnprocessableException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
 import java.nio.charset.StandardCharsets
@@ -27,7 +28,7 @@ class ShopeeCatalog(
     override fun pull(credentials: CatalogCredentials, window: IngestionWindow): CatalogSnapshot {
         val config = properties.shopee
         if (config.clientId.isBlank() || config.clientSecret.isBlank()) {
-            throw UnprocessableException("Defina SHOPEE_PARTNER_ID e SHOPEE_PARTNER_KEY no .env")
+            throw UnprocessableException(apiMessage("shopee.env"))
         }
         val shopId = shopId(credentials.sellerExternalId)
         val sales = mutableListOf<br.com.reconcile.integration.ingestion.CanonicalSale>()
@@ -51,7 +52,7 @@ class ShopeeCatalog(
             if (cursor.isNotBlank()) extra["cursor"] = cursor
             val list = signedGet("/api/v2/order/get_order_list", accessToken, shopId, extra)
             if (list["error"]?.toString()?.isNotBlank() == true) {
-                throw UnprocessableException(list["message"]?.toString() ?: "Falha ao listar pedidos Shopee")
+                throw UnprocessableException(list["message"]?.toString() ?: apiMessage("shopee.list"))
             }
             val response = CatalogJson.child(list, "response")
             val numbers = CatalogJson.maps(response["order_list"]).mapNotNull { CatalogJson.text(it, "order_sn") }
@@ -95,7 +96,7 @@ class ShopeeCatalog(
         val raw = sellerExternalId.trim()
         val shop = if (raw.startsWith("m:")) raw.substringAfterLast(':') else raw
         if (raw.startsWith("main:") || shop.toLongOrNull() == null) {
-            throw UnprocessableException("Shop da Shopee ausente. Reconecte a integração.")
+            throw UnprocessableException(apiMessage("oauth.shopeeShopMissing"))
         }
         return shop
     }

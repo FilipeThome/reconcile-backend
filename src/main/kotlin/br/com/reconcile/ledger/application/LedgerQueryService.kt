@@ -12,6 +12,7 @@ import br.com.reconcile.ledger.infra.SettlementRepository
 import br.com.reconcile.reconciliation.infra.CaseRepository
 import br.com.reconcile.reconciliation.infra.SnapshotRepository
 import br.com.reconcile.shared.api.NotFoundException
+import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.api.PeriodFilter
 import br.com.reconcile.shared.security.currentUser
 import org.springframework.stereotype.Service
@@ -46,7 +47,7 @@ class LedgerQueryService(
 
     fun getOrder(externalId: String): Map<String, Any?> {
         val order = orders.findByTenantIdAndExternalId(tenantId(), externalId)
-            ?: throw NotFoundException("Pedido $externalId não encontrado")
+            ?: throw NotFoundException(apiMessage("order.missing", externalId))
         val payment = payments.findByTenantIdAndOrderId(tenantId(), order.id).firstOrNull()
         val settlement = settlements.findByTenantIdAndOrderId(tenantId(), order.id)
         val payout = payoutOrders.findByOrderId(order.id).firstOrNull()?.let { link ->

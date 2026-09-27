@@ -60,7 +60,7 @@ data class PeriodFilter(
         private fun parseDate(value: String?): LocalDate? {
             val raw = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
             return runCatching { LocalDate.parse(raw) }.getOrElse {
-                throw UnprocessableException("Data inválida: $raw")
+                throw UnprocessableException(apiMessage("date.invalid", raw))
             }
         }
     }

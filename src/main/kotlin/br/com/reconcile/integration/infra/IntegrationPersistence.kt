@@ -1,6 +1,8 @@
 package br.com.reconcile.integration.infra
 
+import br.com.reconcile.shared.security.TokenColumnConverter
 import jakarta.persistence.Column
+import jakarta.persistence.Convert
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
@@ -22,7 +24,9 @@ class ConnectionEntity(
     var status: String = "disponivel",
     var detail: String? = null,
     @Column(name = "last_sync_at") var lastSyncAt: Instant? = null,
+    @Convert(converter = TokenColumnConverter::class)
     @Column(name = "access_token") var accessToken: String? = null,
+    @Convert(converter = TokenColumnConverter::class)
     @Column(name = "refresh_token") var refreshToken: String? = null,
     @Column(name = "token_expires_at") var tokenExpiresAt: Instant? = null,
     @Column(name = "seller_external_id") var sellerExternalId: String? = null,

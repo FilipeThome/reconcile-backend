@@ -1,4 +1,4 @@
--- Amazon connection is always available. Demo orders load only when the ledger seed is on.
+-- Amazon stays disponivel until a real OAuth grant. SEED_LEDGER=true seeds the demo ledger only.
 insert into marketplace_connections (id, tenant_id, external_id, name, kind, status, detail, last_sync_at)
 values (
   'a0000000-0000-4000-8000-000000000006',
@@ -56,7 +56,7 @@ begin
     ('70000000-0000-4000-8000-000000000140', '8f2c1a00-0000-4000-8000-000000000001', 'DIV-2026-000140', '2026-05-25 09:30:00+00', 'PED-200001401', 'PAY-AMZ-02', 'SET-AMZ-02', 'REP-AMZ-02', 'NFE-100141', 'tarifa_inesperada', 'Amazon reteve R$ 30,00 de tarifa de indicação não mapeada no motor.', 30.00, 30.00, 0.00, 'recuperavel', 'aberta', 'alta', 'Ana Dantas', 0.9100, 'Mapear a referral fee da Amazon no dicionário de componentes.');
 
     insert into case_timeline (id, tenant_id, case_id, occurred_at, title, detail, tone) values
-    ('72000000-0000-4000-8000-000000000140', '8f2c1a00-0000-4000-8000-000000000001', '70000000-0000-4000-8000-000000000140', '2026-05-25 09:30:00+00', 'Caso aberto', 'Tarifa Amazon não identificada', 'danger');
+    ('72000000-0000-4000-8000-000000000152', '8f2c1a00-0000-4000-8000-000000000001', '70000000-0000-4000-8000-000000000140', '2026-05-25 09:30:00+00', 'Caso aberto', 'Tarifa Amazon não identificada', 'danger');
 
     insert into calculation_snapshots (id, tenant_id, external_id, order_id, engine_version, gross_amount, expected_amount, actual_amount, difference_amount, components) values
     ('80000000-0000-4000-8000-000000000140', '8f2c1a00-0000-4000-8000-000000000001', 'SNAP-140', '10000000-0000-4000-8000-000000001400', 'sce-v1.4', 259.90, 207.92, 207.92, 0.00, '[{"label":"Comissão marketplace","amount":-38.99},{"label":"Frete","amount":-12.99}]'),

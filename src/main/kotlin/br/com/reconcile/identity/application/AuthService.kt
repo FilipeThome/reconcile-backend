@@ -16,7 +16,7 @@ class AuthService(
     private val jwt: JwtService,
 ) {
     fun login(email: String, password: String): LoginResponse {
-        val user = users.findByEmail(email.trim()) ?: throw BadCredentialsException("invalid")
+        val user = users.findByEmailIgnoreCase(email.trim()) ?: throw BadCredentialsException("invalid")
         if (!encoder.matches(password, user.passwordHash)) throw BadCredentialsException("invalid")
         val tenant = tenants.findById(user.tenantId).orElseThrow { BadCredentialsException("invalid") }
         val principal = AuthUser(user.id, user.tenantId, tenant.externalId, user.name, user.email, user.role)

@@ -3,6 +3,8 @@ package br.com.reconcile.shared.security
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import br.com.reconcile.shared.api.apiErrorBody
+import br.com.reconcile.shared.api.apiMessage
 import org.slf4j.MDC
 import org.springframework.http.MediaType
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -25,25 +27,25 @@ class JwtAuthFilter(
         if (header != null && header.startsWith("Bearer ")) {
             val token = header.removePrefix("Bearer ").trim()
             if (token.isEmpty()) {
-                unauthorized(response, "Token ausente")
+                unauthorized(response, "auth.tokenMissing")
                 return
             }
             val parsed = try {
                 jwtService.parse(token)
             } catch (_: Exception) {
-                unauthorized(response, "Token inválido ou expirado")
+                unauthorized(response, "auth.tokenInvalid")
                 return
             }
             val user = sessionUsers.hydrate(parsed)
             if (user == null) {
-                unauthorized(response, "Sessão inválida")
+                unauthorized(response, "auth.sessionInvalid")
                 return
             }
             val tenantHeader = request.getHeader("X-Tenant-Id")
             if (!tenantHeader.isNullOrBlank() && tenantHeader != user.tenantExternalId && tenantHeader != user.tenantId.toString()) {
                 response.status = 403
                 response.contentType = MediaType.APPLICATION_JSON_VALUE
-                response.writer.write("""{"code":"FORBIDDEN","message":"Tenant do header não confere com o token"}""")
+                response.writer.write(apiErrorBody("FORBIDDEN", apiMessage("auth.tenantMismatch")))
                 return
             }
             MDC.put("tenantId", user.tenantExternalId)
@@ -57,9 +59,9 @@ class JwtAuthFilter(
         }
     }
 
-    private fun unauthorized(response: HttpServletResponse, message: String) {
+    private fun unauthorized(response: HttpServletResponse, key: String) {
         response.status = 401
         response.contentType = MediaType.APPLICATION_JSON_VALUE
-        response.writer.write("""{"code":"UNAUTHORIZED","message":"$message"}""")
+        response.writer.write(apiErrorBody("UNAUTHORIZED", apiMessage(key)))
     }
 }

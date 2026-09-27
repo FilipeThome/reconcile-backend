@@ -1,5 +1,6 @@
 package br.com.reconcile.integration.oauth
 
+import br.com.reconcile.shared.api.apiMessage
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpHeaders
@@ -106,7 +107,7 @@ class RestJsonHttpClient(builder: RestClient.Builder) : JsonHttpClient {
         val httpMethod = when (method) {
             "GET" -> HttpMethod.GET
             "PUT" -> HttpMethod.PUT
-            else -> throw IllegalArgumentException("Método HTTP não suportado")
+            else -> throw IllegalArgumentException(apiMessage("auth.httpMethod"))
         }
         val request = client.method(httpMethod).uri(url)
         request.header("User-Agent", "Reconcile/1.0")

@@ -1,6 +1,7 @@
 package br.com.reconcile.shared.security
 
 import br.com.reconcile.shared.api.ApiException
+import br.com.reconcile.shared.api.apiMessage
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
@@ -19,7 +20,7 @@ class LoginRateLimiter {
             return
         }
         if (bucket.count >= MAX_ATTEMPTS) {
-            throw ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT", "Muitas tentativas. Aguarde um minuto.")
+            throw ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMIT", apiMessage("auth.rateLimit"))
         }
     }
 
