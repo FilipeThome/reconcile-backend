@@ -8,6 +8,7 @@ class MarketplaceOAuthProperties {
     var mercadoLivre: ProviderProperties = ProviderProperties()
     var shopee: ProviderProperties = ProviderProperties()
     var amazon: ProviderProperties = ProviderProperties()
+    var olx: ProviderProperties = ProviderProperties()
 }
 
 class ProviderProperties {
@@ -23,4 +24,8 @@ class ProviderProperties {
     var awsSessionToken: String = ""
     var awsRegion: String = "us-east-1"
     var marketplaceId: String = ""
+    var scope: String = ""
+    var webhookUrl: String = ""
+    var webhookSecret: String = ""
+    var deleteSoldAds: Boolean = false
 }

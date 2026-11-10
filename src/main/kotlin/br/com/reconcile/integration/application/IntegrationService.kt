@@ -10,6 +10,7 @@ import br.com.reconcile.integration.infra.RawEventRepository
 import br.com.reconcile.integration.ingestion.MarketplaceIngestionService
 import br.com.reconcile.integration.oauth.MarketplaceOAuthService
 import br.com.reconcile.integration.oauth.OAuthTokens
+import br.com.reconcile.integration.stocksync.OlxStockPort
 import br.com.reconcile.shared.api.NotFoundException
 import br.com.reconcile.shared.api.apiMessage
 import br.com.reconcile.shared.audit.AuditService
@@ -29,6 +30,7 @@ class IntegrationService(
     private val oauth: MarketplaceOAuthService,
     private val sellers: SellerAccountRepository,
     private val ingestion: MarketplaceIngestionService,
+    private val olx: OlxStockPort,
 ) {
     fun list() = connections.findByTenantId(currentUser().tenantId).map {
         val hint = oauth.configuredHint(it.externalId)
@@ -74,6 +76,7 @@ class IntegrationService(
         connection.refreshToken = null
         connection.tokenExpiresAt = null
         connection.sellerExternalId = null
+        connection.stockSyncSince = null
         setStatus(connection, "disponivel")
         return mapOf("id" to connection.externalId, "status" to "disponivel")
     }
@@ -87,7 +90,10 @@ class IntegrationService(
         connection.tokenExpiresAt = tokens.expiresAt
         connection.sellerExternalId = tokens.sellerExternalId
         connection.detail = tokens.sellerLabel ?: "OAuth seller ${tokens.sellerExternalId}"
+        // Sales older than this never move stock on the other marketplaces.
+        connection.stockSyncSince = Instant.now()
         connections.save(connection)
+        if (tokens.provider == "olx") subscribeOlxSales(tokens)
         upsertSeller(tokens)
         audit.record(tokens.tenantId, "oauth", "integration.oauth.connected", "integration", tokens.provider)
     }
@@ -136,10 +142,18 @@ class IntegrationService(
         connections.findByTenantIdAndExternalId(tenantId, externalId)
             ?: throw NotFoundException(apiMessage("integration.missing", externalId))
 
+    /** OLX reports a sold ad only through this subscription; a refusal must not undo the connection. */
+    private fun subscribeOlxSales(tokens: OAuthTokens) {
+        val subscribed = runCatching { olx.registerWebhook(tokens.accessToken, oauth.webhookToken(tokens.tenantId)) }.getOrDefault(false)
+        val action = if (subscribed) "integration.olx.webhook" else "integration.olx.webhook.skipped"
+        audit.record(tokens.tenantId, "oauth", action, "integration", "olx")
+    }
+
     private fun upsertSeller(tokens: OAuthTokens) {
         val marketplace = when (tokens.provider) {
             "ml" -> "Mercado Livre"
             "amazon" -> "Amazon"
+            "olx" -> "OLX"
             else -> "Shopee"
         }
         val existing = sellers.findByTenantIdAndMarketplace(tokens.tenantId, marketplace)

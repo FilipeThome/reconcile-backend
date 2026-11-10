@@ -140,6 +140,15 @@ private val PORTUGUESE_MESSAGES = mapOf(
     "amazon.client" to "Defina AMAZON_CLIENT_ID e AMAZON_CLIENT_SECRET no .env",
     "amazon.aws" to "Defina AMAZON_AWS_ACCESS_KEY e AMAZON_AWS_SECRET_KEY no .env",
     "ml.seller" to "Seller do Mercado Livre ausente. Reconecte a integração.",
+    "oauth.hint.olx" to "Defina OLX_CLIENT_ID, OLX_CLIENT_SECRET e a redirect URI no .env",
+    "stocksync.connection" to "Conexão inativa ou sem token. Reconecte a integração.",
+    "stocksync.quantityUnknown" to "O marketplace não informou a quantidade atual (vários depósitos ou estoque ilegível).",
+    "stocksync.shopee" to "Shopee recusou a operação: {0}",
+    "stocksync.olx" to "OLX recusou a operação ({0})",
+    "stocksync.olxManual" to "SKU esgotado, mas o anúncio OLX continua ativo. Remova manualmente ou defina OLX_DELETE_SOLD_ADS=true.",
+    "stocksync.order" to "Não foi possível ler o pedido no marketplace ({0})",
+    "stocksync.sku" to "Informe um SKU com até 120 caracteres.",
+    "stocksync.quantity" to "A quantidade vendida deve ficar entre 1 e 9999.",
 )
 
 private val ENGLISH_MESSAGES = mapOf(
@@ -227,4 +236,13 @@ private val ENGLISH_MESSAGES = mapOf(
     "amazon.client" to "Set AMAZON_CLIENT_ID and AMAZON_CLIENT_SECRET in .env",
     "amazon.aws" to "Set AMAZON_AWS_ACCESS_KEY and AMAZON_AWS_SECRET_KEY in .env",
     "ml.seller" to "Mercado Livre seller is missing. Reconnect the integration.",
+    "oauth.hint.olx" to "Set OLX_CLIENT_ID, OLX_CLIENT_SECRET, and the redirect URI in .env",
+    "stocksync.connection" to "Connection is inactive or has no token. Reconnect the integration.",
+    "stocksync.quantityUnknown" to "The marketplace did not return the current quantity (several warehouses or unreadable stock).",
+    "stocksync.shopee" to "Shopee refused the operation: {0}",
+    "stocksync.olx" to "OLX refused the operation ({0})",
+    "stocksync.olxManual" to "The SKU is sold out but the OLX ad is still active. Remove it manually or set OLX_DELETE_SOLD_ADS=true.",
+    "stocksync.order" to "Could not read the order on the marketplace ({0})",
+    "stocksync.sku" to "Enter a SKU of up to 120 characters.",
+    "stocksync.quantity" to "The sold quantity must be between 1 and 9999.",
 )

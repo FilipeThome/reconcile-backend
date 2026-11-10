@@ -84,6 +84,32 @@ class MercadoLivreStockClient(
 
     fun get(token: String, sellerId: String, itemId: String): StockItem = load(token, sellerId, itemId).view
 
+    /**
+     * Listings whose SKU is exactly [sku]. Unlike [list] this never falls back to a title search,
+     * because the result feeds automatic stock changes.
+     */
+    fun findBySku(token: String, sellerId: String, sku: String): List<StockItem> {
+        requireSeller(sellerId)
+        val clean = sku.trim()
+        if (clean.isEmpty()) return emptyList()
+        val ids = linkedSetOf<String>()
+        for (param in listOf("seller_sku", "sku")) {
+            val url = UriComponentsBuilder.fromUriString("${base()}/users/$sellerId/items/search")
+                .queryParam(param, clean)
+                .queryParam("limit", 50)
+                .build()
+                .encode()
+                .toUriString()
+            val response = remoteCall("GET", url, token)
+            if (response.status >= 400) throw remote(response)
+            ids += stringList(CatalogJson.map(response.body)["results"]).filter { ITEM_ID.matches(it) }
+        }
+        if (ids.isEmpty()) return emptyList()
+        return ids.chunked(20).flatMap { multiget(token, sellerId, it) }.filter { item ->
+            item.sku.equals(clean, ignoreCase = true) || item.variations.any { it.sku.equals(clean, ignoreCase = true) }
+        }
+    }
+
     fun update(
         token: String,
         sellerId: String,
@@ -199,8 +225,11 @@ class MercadoLivreStockClient(
     }
 
     private fun multiget(token: String, sellerId: String, ids: List<String>): List<StockItem> {
+        // /items?ids= was retired on 25/10/2026; /items/bulk selects fields with a "body." prefix.
         val attributes = "id,title,available_quantity,sold_quantity,status,permalink,seller_id,seller_custom_field,user_product_id,inventory_id,variations,attributes,shipping"
-        val url = "${base()}/items?ids=${ids.joinToString(",")}&attributes=$attributes"
+            .split(',')
+            .joinToString(",") { "body.$it" }
+        val url = "${base()}/items/bulk?ids=${ids.joinToString(",")}&attributes=$attributes"
         val response = remoteCall("GET", url, token)
         if (response.status >= 400) throw remote(response)
         return entries(response.body).mapNotNull { entry ->
