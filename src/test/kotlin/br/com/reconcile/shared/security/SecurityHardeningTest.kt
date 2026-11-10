@@ -41,6 +41,20 @@ class SecurityHardeningTest {
     }
 
     @Test
+    fun `marketplace webhooks bypass the session filter`() {
+        val jwt = org.mockito.Mockito.mock(JwtService::class.java)
+        val webhook = MockHttpServletRequest("POST", "/api/v1/integrations/webhooks/olx")
+        webhook.servletPath = "/api/v1/integrations/webhooks/olx"
+        webhook.addHeader("Authorization", "Bearer tenant.signature")
+        val response = org.springframework.mock.web.MockHttpServletResponse()
+        val chain = org.springframework.mock.web.MockFilterChain()
+        JwtAuthFilter(jwt) { it }.doFilter(webhook, response, chain)
+        assertEquals(200, response.status)
+        assertEquals(webhook, chain.request)
+        org.mockito.Mockito.verifyNoInteractions(jwt)
+    }
+
+    @Test
     fun `forwarded chain wins over a client supplied real ip`() {
         val trusted = ClientIpResolver("10.0.0.5")
         val request = MockHttpServletRequest()

@@ -267,6 +267,8 @@ class MarketplaceOAuthTest {
         server.expect(requestTo("http://localhost/guarded")).andExpect(method(HttpMethod.GET))
             .andExpect(header("Authorization", "Bearer tok"))
             .andRespond(withSuccess("""{"ok":true}""", MediaType.APPLICATION_JSON))
+        server.expect(requestTo("http://localhost/stock")).andExpect(method(HttpMethod.POST))
+            .andRespond(withSuccess("""{"error":""}""", MediaType.APPLICATION_JSON))
         val read = client.requestJson("GET", "http://localhost/stock", "tok")
         assertEquals(1, (read.body as Map<*, *>)["quantity"])
         assertEquals("7", read.headers["x-version"])
@@ -281,6 +283,7 @@ class MarketplaceOAuthTest {
         assertEquals(true, (guarded.body as Map<*, *>)["ok"])
         assertEquals(200, br.com.reconcile.integration.oauth.HttpJson(200, null).status)
         assertThrows<IllegalArgumentException> { client.requestJson("DELETE", "http://localhost/x", "tok") }
+        assertEquals(200, client.requestJson("POST", "http://localhost/stock", "tok", mapOf("stock" to 1)).status)
         server.verify()
     }
 
@@ -304,6 +307,53 @@ class MarketplaceOAuthTest {
         )
         Mockito.`when`(http.getJson("https://api.mercadolibre.com/users/me", "t2")).thenReturn(emptyMap())
         assertEquals("195831534", oauth.exchange("ml", "c", state3, null, null).sellerExternalId)
+    }
+
+    @Test
+    fun `olx authorizes with scopes, has no refresh token and signs its webhook token`() {
+        properties.olx.apply {
+            redirectUri = "http://localhost:8080/api/v1/integrations/oauth/olx/callback"
+            authorizeUrl = "https://auth.olx.com.br/oauth"
+            tokenUrl = "https://auth.olx.com.br/oauth/token"
+            apiUrl = "https://apps.olx.com.br"
+            scope = "basic_user_info autoupload autoservice"
+        }
+        assertTrue(oauth.configuredHint("olx")!!.contains("OLX_CLIENT_ID"))
+        assertThrows<UnprocessableException> { oauth.authorizationUrl("olx", TestAuth.tenantId, TestAuth.userId) }
+        properties.olx.clientId = "olx-id"
+        properties.olx.clientSecret = "olx-secret"
+        assertEquals(null, oauth.configuredHint("olx"))
+        assertTrue(oauth.isOAuthProvider("OLX"))
+
+        val start = oauth.authorizationUrl("olx", TestAuth.tenantId, TestAuth.userId).authorizationUrl
+        assertTrue(start.startsWith("https://auth.olx.com.br/oauth?client_id=olx-id"))
+        assertEquals("basic_user_info%20autoupload%20autoservice", query(start, "scope"))
+        assertEquals("code", query(start, "response_type"))
+
+        Mockito.`when`(http.postForm(Mockito.anyString() ?: "", Mockito.any() ?: emptyMap()))
+            .thenReturn(mapOf("access_token" to "olx-token", "token_type" to "Bearer"))
+        Mockito.`when`(http.postJson("https://apps.olx.com.br/oauth_api/basic_user_info", mapOf("access_token" to "olx-token")))
+            .thenReturn(mapOf("user_name" to "Loja Exemplo", "user_email" to "loja@example.com"))
+        val tokens = oauth.exchange("olx", "code", query(start, "state"), null, null)
+        assertEquals(listOf("olx", "loja@example.com", "olx-token", null, null), listOf(tokens.provider, tokens.sellerExternalId, tokens.accessToken, tokens.refreshToken, tokens.expiresAt))
+        assertEquals("OAuth seller loja@example.com · Loja Exemplo", tokens.sellerLabel)
+        assertEquals("http://localhost:5173/integracoes?connected=olx", oauth.frontendRedirect(connected = "olx"))
+        assertEquals(false, oauth.ensureAccessToken("olx", "olx-token", null, null, "loja@example.com").rotated)
+
+        val anonymous = oauth.authorizationUrl("olx", TestAuth.tenantId, TestAuth.userId).authorizationUrl
+        Mockito.`when`(http.postJson("https://apps.olx.com.br/oauth_api/basic_user_info", mapOf("access_token" to "olx-token")))
+            .thenReturn(emptyMap())
+        assertEquals("olx-user", oauth.exchange("olx", "code", query(anonymous, "state"), null, null).sellerExternalId)
+        val refused = oauth.authorizationUrl("olx", TestAuth.tenantId, TestAuth.userId).authorizationUrl
+        Mockito.`when`(http.postForm(Mockito.anyString() ?: "", Mockito.any() ?: emptyMap())).thenReturn(mapOf("error" to "invalid_grant"))
+        assertThrows<UnprocessableException> { oauth.exchange("olx", "code", query(refused, "state"), null, null) }
+
+        val token = oauth.webhookToken(TestAuth.tenantId)
+        assertEquals(TestAuth.tenantId, oauth.tenantOfWebhookToken(token))
+        assertEquals(TestAuth.tenantId, oauth.tenantOfWebhookToken("Bearer $token"))
+        assertEquals(null, oauth.tenantOfWebhookToken("${TestAuth.tenantId}.forged"))
+        assertEquals(null, oauth.tenantOfWebhookToken("garbage"))
+        assertEquals(null, oauth.tenantOfWebhookToken(null))
     }
 
     private fun query(url: String, name: String) =

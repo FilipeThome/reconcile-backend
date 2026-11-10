@@ -61,6 +61,7 @@ class MarketplaceOAuthService(
             "ml" -> refreshMercadoLivre(refreshToken)
             "shopee" -> refreshShopee(refreshToken, sellerExternalId)
             "amazon" -> refreshAmazon(refreshToken)
+            // OLX issues a single long-lived token: no refresh grant exists.
             else -> TokenLease(accessToken, refreshToken, expiresAt, rotated = false)
         }
     }
@@ -77,6 +78,7 @@ class MarketplaceOAuthService(
             "ml" -> mercadoLivreAuthorizeUrl(config, state, verifier)
             "shopee" -> shopeeAuthorizeUrl(config, state)
             "amazon" -> amazonAuthorizeUrl(config, state)
+            "olx" -> olxAuthorizeUrl(config, state)
             else -> throw UnprocessableException(apiMessage("oauth.provider", provider))
         }
         return OAuthStart(url)
@@ -103,6 +105,7 @@ class MarketplaceOAuthService(
             "ml" -> exchangeMercadoLivre(pendingAuth.tenantId, config, code, pendingAuth.verifier)
             "shopee" -> exchangeShopee(pendingAuth.tenantId, config, code, shopId, mainAccountId)
             "amazon" -> exchangeAmazon(pendingAuth.tenantId, config, code, sellingPartnerId)
+            "olx" -> exchangeOlx(pendingAuth.tenantId, config, code)
             else -> throw UnprocessableException(apiMessage("oauth.provider", normalized))
         }
     }
@@ -121,11 +124,59 @@ class MarketplaceOAuthService(
             when (provider) {
                 "ml" -> apiMessage("oauth.hint.ml")
                 "amazon" -> apiMessage("oauth.hint.amazon")
+                "olx" -> apiMessage("oauth.hint.olx")
                 else -> apiMessage("oauth.hint.shopee")
             }
         } else {
             null
         }
+    }
+
+    /** Static token OLX echoes back in the Authorization header of its ad-status webhook. */
+    fun webhookToken(tenantId: UUID): String = "$tenantId.${hmacHex(signingSecret, "olx:$tenantId")}"
+
+    fun tenantOfWebhookToken(raw: String?): UUID? {
+        val token = raw?.trim()?.removePrefix("Bearer ")?.trim().orEmpty()
+        val tenant = runCatching { UUID.fromString(token.substringBefore('.')) }.getOrNull() ?: return null
+        val expected = webhookToken(tenant)
+        val same = MessageDigest.isEqual(expected.toByteArray(StandardCharsets.UTF_8), token.toByteArray(StandardCharsets.UTF_8))
+        return if (same) tenant else null
+    }
+
+    private fun olxAuthorizeUrl(config: ProviderProperties, state: String): String =
+        UriComponentsBuilder.fromUriString(config.authorizeUrl)
+            .queryParam("client_id", config.clientId)
+            .queryParam("redirect_uri", config.redirectUri)
+            .queryParam("response_type", "code")
+            .queryParam("scope", config.scope)
+            .queryParam("state", state)
+            .build()
+            .encode()
+            .toUriString()
+
+    private fun exchangeOlx(tenantId: UUID, config: ProviderProperties, code: String): OAuthTokens {
+        val token = http.postForm(
+            config.tokenUrl,
+            mapOf(
+                "code" to code,
+                "client_id" to config.clientId,
+                "client_secret" to config.clientSecret,
+                "redirect_uri" to config.redirectUri,
+                "grant_type" to "authorization_code",
+            ),
+        )
+        val access = stringValue(token, "access_token") ?: throw oauthFailure(token, "OLX")
+        val me = http.postJson("${config.apiUrl.trimEnd('/')}/oauth_api/basic_user_info", mapOf("access_token" to access))
+        val seller = (stringValue(me, "user_email") ?: "olx-user").take(64)
+        return OAuthTokens(
+            provider = "olx",
+            tenantId = tenantId,
+            sellerExternalId = seller,
+            accessToken = access,
+            refreshToken = null,
+            expiresAt = null,
+            sellerLabel = listOfNotNull("OAuth seller $seller", stringValue(me, "user_name")).joinToString(" · "),
+        )
     }
 
     private fun mercadoLivreAuthorizeUrl(config: ProviderProperties, state: String, verifier: String?): String {
@@ -376,6 +427,7 @@ class MarketplaceOAuthService(
         "ml" -> properties.mercadoLivre
         "shopee" -> properties.shopee
         "amazon" -> properties.amazon
+        "olx" -> properties.olx
         else -> throw UnprocessableException(apiMessage("oauth.provider", provider))
     }
 
@@ -386,6 +438,7 @@ class MarketplaceOAuthService(
         "ml", "mercadolivre", "mercado-livre" -> "ml"
         "shopee" -> "shopee"
         "amazon" -> "amazon"
+        "olx" -> "olx"
         else -> null
     }
 

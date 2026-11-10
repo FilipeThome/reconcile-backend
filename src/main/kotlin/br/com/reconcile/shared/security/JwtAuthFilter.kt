@@ -19,7 +19,8 @@ class JwtAuthFilter(
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         val path = request.servletPath.ifBlank { request.requestURI.substringBefore('?') }
-        return path == "/api/v1/auth/login" || path == "/api/v1/health" || path.startsWith("/api/v1/integrations/oauth/")
+        return path == "/api/v1/auth/login" || path == "/api/v1/health" || path.startsWith("/api/v1/integrations/oauth/") ||
+            path.startsWith("/api/v1/integrations/webhooks/")
     }
 
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {

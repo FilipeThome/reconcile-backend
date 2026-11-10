@@ -42,12 +42,23 @@ services:
       MERCADO_LIVRE_TOKEN_URL: ${MERCADO_LIVRE_TOKEN_URL:-https://api.mercadolibre.com/oauth/token}
       MERCADO_LIVRE_API_URL: ${MERCADO_LIVRE_API_URL:-https://api.mercadolibre.com}
       MERCADO_LIVRE_PKCE: ${MERCADO_LIVRE_PKCE:-true}
+      MERCADO_LIVRE_WEBHOOK_SECRET: ${MERCADO_LIVRE_WEBHOOK_SECRET:-}
       SHOPEE_PARTNER_ID: ${SHOPEE_PARTNER_ID:-}
       SHOPEE_PARTNER_KEY: ${SHOPEE_PARTNER_KEY:-}
       SHOPEE_REDIRECT_URI: ${SHOPEE_REDIRECT_URI:-http://localhost:8080/api/v1/integrations/oauth/shopee/callback}
       SHOPEE_AUTHORIZE_URL: ${SHOPEE_AUTHORIZE_URL:-https://open.shopee.com.br/auth}
       SHOPEE_TOKEN_URL: ${SHOPEE_TOKEN_URL:-https://openplatform.shopee.com.br/api/v2/auth/token/get}
       SHOPEE_API_URL: ${SHOPEE_API_URL:-https://openplatform.shopee.com.br}
+      SHOPEE_PUSH_URL: ${SHOPEE_PUSH_URL:-}
+      OLX_CLIENT_ID: ${OLX_CLIENT_ID:-}
+      OLX_CLIENT_SECRET: ${OLX_CLIENT_SECRET:-}
+      OLX_REDIRECT_URI: ${OLX_REDIRECT_URI:-http://localhost:8080/api/v1/integrations/oauth/olx/callback}
+      OLX_AUTHORIZE_URL: ${OLX_AUTHORIZE_URL:-https://auth.olx.com.br/oauth}
+      OLX_TOKEN_URL: ${OLX_TOKEN_URL:-https://auth.olx.com.br/oauth/token}
+      OLX_API_URL: ${OLX_API_URL:-https://apps.olx.com.br}
+      OLX_SCOPE: ${OLX_SCOPE:-basic_user_info autoupload autoservice}
+      OLX_WEBHOOK_URL: ${OLX_WEBHOOK_URL:-}
+      OLX_DELETE_SOLD_ADS: ${OLX_DELETE_SOLD_ADS:-false}
       AMAZON_CLIENT_ID: ${AMAZON_CLIENT_ID:-}
       AMAZON_CLIENT_SECRET: ${AMAZON_CLIENT_SECRET:-}
       AMAZON_REDIRECT_URI: ${AMAZON_REDIRECT_URI:-http://localhost:8080/api/v1/integrations/oauth/amazon/callback}

@@ -30,6 +30,7 @@ class ConnectionEntity(
     @Column(name = "refresh_token") var refreshToken: String? = null,
     @Column(name = "token_expires_at") var tokenExpiresAt: Instant? = null,
     @Column(name = "seller_external_id") var sellerExternalId: String? = null,
+    @Column(name = "stock_sync_since") var stockSyncSince: Instant? = null,
     @Version var version: Long = 0,
 )
 
@@ -59,13 +60,43 @@ class IntegrationSyncEntity(
     @Column(name = "finished_at") var finishedAt: Instant? = Instant.now(),
 )
 
+@Entity
+@Table(name = "stock_sale_events")
+class SaleEventEntity(
+    @Id var id: UUID = UUID.randomUUID(),
+    @Column(name = "tenant_id") var tenantId: UUID = UUID.randomUUID(),
+    var provider: String = "",
+    @Column(name = "order_external_id") var orderExternalId: String = "",
+    var sku: String = "",
+    var title: String = "",
+    var quantity: Int = 0,
+    var status: String = "vendido",
+    @JdbcTypeCode(SqlTypes.JSON)
+    var targets: String = "[]",
+    @Column(name = "occurred_at") var occurredAt: Instant = Instant.now(),
+    @Column(name = "created_at") var createdAt: Instant = Instant.now(),
+)
+
 interface ConnectionRepository : JpaRepository<ConnectionEntity, UUID> {
     fun findByTenantId(tenantId: UUID): List<ConnectionEntity>
     fun findByTenantIdAndExternalId(tenantId: UUID, externalId: String): ConnectionEntity?
+    fun findByExternalIdAndStatus(externalId: String, status: String): List<ConnectionEntity>
 }
 
 interface RawEventRepository : JpaRepository<RawEventEntity, UUID> {
     fun existsByTenantIdAndIdempotencyKey(tenantId: UUID, idempotencyKey: String): Boolean
+    fun findByEventType(eventType: String): List<RawEventEntity>
 }
 
 interface IntegrationSyncRepository : JpaRepository<IntegrationSyncEntity, UUID>
+
+interface SaleEventRepository : JpaRepository<SaleEventEntity, UUID> {
+    fun findByTenantIdAndProviderAndOrderExternalIdAndSku(
+        tenantId: UUID,
+        provider: String,
+        orderExternalId: String,
+        sku: String,
+    ): SaleEventEntity?
+
+    fun findTop50ByTenantIdOrderByCreatedAtDesc(tenantId: UUID): List<SaleEventEntity>
+}

@@ -257,7 +257,12 @@ class RemainingServicesTest {
         val ingestion = Mockito.mock(MarketplaceIngestionService::class.java)
         Mockito.`when`(ingestion.supports("ml")).thenReturn(true)
         Mockito.`when`(ingestion.ingest(connection)).thenReturn(IngestionResult(2, 2, 1, 0, 1))
-        val integrations = IntegrationService(connections, syncs, events, audit, oauth, sellerAccounts, ingestion)
+        val olxPort = Mockito.mock(br.com.reconcile.integration.stocksync.OlxStockPort::class.java)
+        val olxConnection = ConnectionEntity(tenantId = tenant, externalId = "olx", name = "OLX", status = "disponivel")
+        Mockito.`when`(connections.findByTenantIdAndExternalId(tenant, "olx")).thenReturn(olxConnection)
+        Mockito.`when`(oauth.webhookToken(tenant)).thenReturn("olx-token")
+        Mockito.`when`(olxPort.registerWebhook("tok3", "olx-token")).thenReturn(true)
+        val integrations = IntegrationService(connections, syncs, events, audit, oauth, sellerAccounts, ingestion, olxPort)
         assertTrue(integrations.list()[0]["detail"].toString().contains("MERCADO_LIVRE"))
         Mockito.`when`(oauth.configuredHint("ml")).thenReturn(null)
         val oauthStart = integrations.connect("ml")
@@ -277,6 +282,17 @@ class RemainingServicesTest {
         integrations.activateFromOAuth(
             br.com.reconcile.integration.oauth.OAuthTokens("shopee", tenant, "44120", "tok2", null, null),
         )
+        integrations.activateFromOAuth(
+            br.com.reconcile.integration.oauth.OAuthTokens("olx", tenant, "loja@example.com", "tok3", null, null),
+        )
+        Mockito.verify(olxPort).registerWebhook("tok3", "olx-token")
+        Mockito.verify(sellerAccounts).save(Mockito.argThat { it != null && it.marketplace == "OLX" } ?: SellerAccountEntity())
+        assertTrue(olxConnection.stockSyncSince != null)
+        Mockito.`when`(olxPort.registerWebhook("tok3", "olx-token")).thenThrow(IllegalStateException("olx down"))
+        integrations.activateFromOAuth(
+            br.com.reconcile.integration.oauth.OAuthTokens("olx", tenant, "loja@example.com", "tok3", null, null),
+        )
+        assertEquals("ativa", olxConnection.status)
         integrations.backfill("ml")
         Mockito.`when`(
             events.existsByTenantIdAndIdempotencyKey(Mockito.any(UUID::class.java) ?: tenant, Mockito.anyString() ?: ""),

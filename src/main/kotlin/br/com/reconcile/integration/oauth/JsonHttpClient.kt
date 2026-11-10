@@ -107,6 +107,7 @@ class RestJsonHttpClient(builder: RestClient.Builder) : JsonHttpClient {
         val httpMethod = when (method) {
             "GET" -> HttpMethod.GET
             "PUT" -> HttpMethod.PUT
+            "POST" -> HttpMethod.POST
             else -> throw IllegalArgumentException(apiMessage("auth.httpMethod"))
         }
         val request = client.method(httpMethod).uri(url)
